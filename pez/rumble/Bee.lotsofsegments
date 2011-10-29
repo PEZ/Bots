@@ -1,0 +1,272 @@
+package pez.rumble.pgun;
+import pez.rumble.utils.*;
+import robocode.*;
+import robocode.util.Utils;
+import java.util.*;
+import java.awt.geom.*;
+
+// Bee, a gun by PEZ. For CassiusClay - Sting like a bee!
+// http://robowiki.net/?CassiusClay
+//
+// This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
+// http://robowiki.net/?RWPCL
+// (Basically it means you must keep the code public if you base any bot on it.)
+//
+// $Id: Bee.java,v 1.19 2004/09/22 21:16:25 peter Exp $
+
+public class Bee {
+    public static boolean isTC = false; // TargetingChallenge
+
+    static final double WALL_MARGIN = 18;
+    static final double MAX_DISTANCE = 900;
+    static final double MAX_BULLET_POWER = 3.0;
+    static final double BULLET_POWER = 1.91;
+
+    static Point2D enemyLocation = new Point2D.Double();
+    static double distance;
+    static double lastVelocity;
+    static int timeSinceAccel;
+    static int timeSinceDeccel;
+    static double lastBearingDirection = 0.73;
+    static double roundNum;
+    static Point2D[] corners;
+    static Point2D center;
+    static Rectangle2D fieldRectangle;
+
+    AdvancedRobot robot;
+
+
+    public Bee(AdvancedRobot robot) {
+	this.robot = robot;
+	GunWave.init();
+	fieldRectangle = PUtils.fieldRectangle(robot, WALL_MARGIN);
+	corners = new Point2D[] { new Point2D.Double(0,0),
+		    new Point2D.Double(0, robot.getBattleFieldHeight()),
+		    new Point2D.Double(robot.getBattleFieldWidth(), robot.getBattleFieldHeight()),
+		    new Point2D.Double(robot.getBattleFieldWidth(), 0) };
+	center = new Point2D.Double(robot.getBattleFieldWidth() / 2, robot.getBattleFieldHeight() / 2);
+
+	if (roundNum > 0) {
+	    System.out.println("range hits given: " + (int)GunWave.rangeHits + " (average / round: " + java.text.NumberFormat.getNumberInstance().format(GunWave.rangeHits / roundNum) + ")");
+	}
+	roundNum++;
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+	GunWave wave = new GunWave(robot);
+	wave.setStartTime(robot.getTime());
+
+	distance = e.getDistance();
+	wave.distanceIndexFaster = PUtils.index(distance, GunWave.DISTANCE_INDEXES_FASTER, MAX_DISTANCE);
+	wave.distanceIndex = PUtils.index(distance, GunWave.DISTANCE_INDEXES, MAX_DISTANCE);
+
+	double bulletPower = bulletPower(distance, e.getEnergy(), robot.getEnergy());
+	if (robot.getOthers() > 0) {
+	    GunWave.waves.add(wave);
+	}
+	double bulletVelocity = PUtils.bulletVelocity(bulletPower);
+	wave.setBulletVelocity(bulletVelocity);
+	wave.bulletPowerIndex = bulletPower < BULLET_POWER * 0.7 ? 0 : bulletPower > BULLET_POWER * 1.1 ? 2 : 1;
+	Point2D robotLocation = new Point2D.Double(robot.getX(), robot.getY());
+	wave.setGunLocation(robotLocation);
+	double bearing = robot.getHeadingRadians() + e.getBearingRadians();
+	wave.setStartBearing(bearing);
+	wave.setTargetLocation(enemyLocation);
+	enemyLocation.setLocation(PUtils.project(robotLocation, bearing, distance));
+
+	double distanceToClosestCorner = Double.POSITIVE_INFINITY;
+	for (int i = 0; i < corners.length; i++) {
+	    double d = robotLocation.distance(corners[i]);
+	    if (d < distanceToClosestCorner) {
+		distanceToClosestCorner = d;
+	    }
+	}
+	wave.cornerIndex = PUtils.index(distanceToClosestCorner, GunWave.CORNER_INDEXES, center.distance(18.0, 18.0));
+
+	wave.velocityIndex = (int)((Math.abs(e.getVelocity()) + 1) / 2.6);
+	wave.velocityIndexFaster = (int)Math.abs(e.getVelocity() / 3);
+
+	timeSinceAccel++;
+	timeSinceDeccel++;
+	double acceleration = Math.abs(e.getVelocity()) - Math.abs(lastVelocity);
+	if (acceleration > 0.5) {
+	    timeSinceAccel = 0;
+	}
+	if (acceleration < -0.5) {
+	    timeSinceDeccel = 0;
+	}
+	wave.accelIndex = timeSinceDeccel > timeSinceAccel ? 1 : 0;
+	lastVelocity = e.getVelocity();
+	double timeSinceVChange = Math.min(timeSinceAccel, timeSinceDeccel);
+	wave.velocityChangedIndex = (int)PUtils.minMax(Math.pow((bulletVelocity * timeSinceVChange) / (distance / timeSinceVChange), 0.35), 0, GunWave.TIMER_INDEXES - 1);
+	wave.velocityChangedIndexFaster = (int)PUtils.minMax(Math.pow((bulletVelocity * timeSinceVChange) / (distance / timeSinceVChange), 0.35), 0, GunWave.TIMER_INDEXES_FASTER - 1);
+
+
+	double lateralVelocity = e.getVelocity() * Math.sin(e.getHeadingRadians() - bearing);
+	if (e.getVelocity() != 0) {
+	    lastBearingDirection = wave.maxEscapeAngle() * PUtils.sign(lateralVelocity);
+	}
+	double orbitDirection = lastBearingDirection / (double)GunWave.MIDDLE_FACTOR;
+	wave.setOrbitDirection(orbitDirection);
+
+	wave.wallIndex = wave.wallIndex(1, GunWave.WALL_INDEXES, GunWave.WALL_INDEX_WIDTH, fieldRectangle);
+	wave.wallIndexReverse = wave.wallIndex(-1, GunWave.WALL_INDEXES_FASTER, GunWave.WALL_INDEX_WIDTH_FASTER, fieldRectangle);
+	wave.wallIndexFaster = wave.wallIndex(1, GunWave.WALL_INDEXES_FASTER, GunWave.WALL_INDEX_WIDTH_FASTER, fieldRectangle);
+
+	GunWave.updateWaves();
+
+	Point2D nextRobotLocation = PUtils.project(robotLocation, robot.getHeadingRadians(), robot.getVelocity());
+	Point2D nextEnemyLocation = PUtils.project(enemyLocation, e.getHeadingRadians(), e.getVelocity());
+	double nextBearing = PUtils.absoluteBearing(nextRobotLocation, nextEnemyLocation);
+	double guessedBearing = bearing + orbitDirection * (wave.mostVisited() - GunWave.MIDDLE_FACTOR);
+	robot.setTurnGunRightRadians(Utils.normalRelativeAngle(guessedBearing - robot.getGunHeadingRadians()));
+	if (isTC || (robot.getEnergy() >= BULLET_POWER || e.getEnergy() < robot.getEnergy() / 5 || distance < 120)) {
+	    if (Math.abs(robot.getGunTurnRemainingRadians()) < PUtils.botWidthAngle(distance) / 2 && robot.setFireBullet(bulletPower) != null) {
+		if (bulletPower > 1.2) {
+		    GunWave.shots[wave.distanceIndex]++;
+		}
+		wave.weight = 2.5;
+	    }
+	}
+    }
+
+    public void onBulletHit(BulletHitEvent e) {
+	if (e.getBullet().getPower() > 1.2) {
+	    GunWave.hits[PUtils.index(distance, GunWave.DISTANCE_INDEXES, MAX_DISTANCE)]++;
+	    if (distance > 150) {
+		GunWave.rangeHits++;
+	    }
+	}
+    }
+
+    double bulletPower(double distance, double eEnergy, double rEnergy) {
+	double wantedBulletPower = (isTC || distance < 130) ? MAX_BULLET_POWER : BULLET_POWER;
+	double bulletPower = wantedBulletPower;
+	if (!isTC) {
+	    bulletPower = Math.min(Math.min(eEnergy / 4, rEnergy / (distance >= 130 ? 5 : 1)), wantedBulletPower);
+	}
+
+	return bulletPower;
+    }
+}
+
+class GunWave extends Wave {
+    static final int BULLET_POWER_INDEXES = 3;
+    static final int DISTANCE_INDEXES = 6;
+    static final int DISTANCE_INDEXES_FASTER = 4;
+    static final int VELOCITY_INDEXES = 4;
+    static final int VELOCITY_INDEXES_FASTER = 3;
+    static final int ACCEL_INDEXES = 2;
+    static final int WALL_INDEXES_FASTER = 3;
+    static final int WALL_INDEXES = 4;
+    static final double WALL_INDEX_WIDTH_FASTER = 7.5;
+    static final double WALL_INDEX_WIDTH = 5.5;
+    static final int TIMER_INDEXES_FASTER = 3;
+    static final int TIMER_INDEXES = 5;
+    static final int CORNER_INDEXES = 6;
+    static final int FACTORS = 31;
+    static final int MIDDLE_FACTOR = (FACTORS - 1) / 2;
+
+    static double[] shots = new double[DISTANCE_INDEXES];
+    static double[] hits = new double[DISTANCE_INDEXES];
+
+    static double[][][][][][] factorsFaster = new double[DISTANCE_INDEXES_FASTER][VELOCITY_INDEXES_FASTER][ACCEL_INDEXES][TIMER_INDEXES_FASTER][WALL_INDEXES_FASTER][FACTORS];
+    static double[][][][][][][] factorsMedium = new double[BULLET_POWER_INDEXES][DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][TIMER_INDEXES][WALL_INDEXES][FACTORS];
+    static double[][][][][][][][] factorsSlower = new double[BULLET_POWER_INDEXES][DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][TIMER_INDEXES][WALL_INDEXES][CORNER_INDEXES][FACTORS];
+
+    static List waves;
+    static double rangeHits;
+
+    int bulletPowerIndex;
+    int distanceIndexFaster;
+    int distanceIndex;
+    int velocityIndex;
+    int velocityIndexFaster;
+    int accelIndex;
+    int velocityChangedIndex;
+    int velocityChangedIndexFaster;
+    int wallIndex;
+    int wallIndexReverse;
+    int wallIndexFaster;
+    int cornerIndex;
+    double weight = 1;
+
+    static void init() {
+	waves = new ArrayList();
+    }
+
+    public GunWave(AdvancedRobot robot) {
+	init(robot, FACTORS);
+    }
+
+    static void updateWaves() {
+	List reap = new ArrayList();
+	for (int i = 0, n = waves.size(); i < n; i++) {
+	    GunWave wave = (GunWave)waves.get(i);
+	    wave.setDistanceFromGun((robot.getTime() - wave.getStartTime()) * wave.getBulletVelocity());
+	    if (wave.passed(18)) {
+		if (wave.getRobot().getOthers() > 0) {
+		    wave.registerVisits();
+		}
+		reap.add(wave);
+	    }
+	}
+	for (int i = 0, n = reap.size(); i < n; i++) {
+	    waves.remove(reap.get(i));
+	}
+    }
+
+    void registerVisits() {
+	int index = Math.max(1, visitingIndex());
+	double[][] buffers = statBuffers();
+	for (int i = 0; i < buffers.length; i++) {
+	    registerVisits(buffers[i], index);
+	}
+    }
+
+    void registerVisits(double[] buffer, int index) {
+	buffer[0]++;
+	int halfBotWidth = (int)Math.floor(botWidth() / 2);
+	if (halfBotWidth > 1) {
+	    for (int i = Math.max(1, index - halfBotWidth); i < Math.min(FACTORS - 1, index + halfBotWidth); i++) {
+		buffer[i] += weight;
+	    }
+	}
+	else {
+	    buffer[index] += weight;
+	}
+    }
+
+    int mostVisited() {
+	int mostVisitedIndex = MIDDLE_FACTOR;
+	double most = 0;
+	for (int i = 1; i < FACTORS; i++) {
+	    double visits = 0;
+	    double[][] buffers = statBuffers();
+	    for (int b = 0; b < buffers.length; b++) {
+		visits += buffers[b][i] / Math.max(1, buffers[b][0]);
+	    }
+	    if (visits > most) {
+		mostVisitedIndex = i;
+		most = visits;
+	    }
+	}
+	return mostVisitedIndex;
+    }
+
+    double[][] statBuffers() {
+	return new double[][] {
+	    factorsFaster[distanceIndexFaster][velocityIndexFaster][accelIndex][velocityChangedIndexFaster][wallIndexFaster],
+	    factorsMedium[bulletPowerIndex][distanceIndex][velocityIndex][accelIndex][velocityChangedIndex][wallIndex],
+	    factorsSlower[bulletPowerIndex][distanceIndex][velocityIndex][accelIndex][velocityChangedIndex][wallIndex][cornerIndex]
+	};
+    }
+
+    static int distanceIndex(double distance) {
+	return PUtils.index(distance, DISTANCE_INDEXES, Bee.MAX_DISTANCE);
+    }
+
+    static double hitRate(int index) {
+	return hits[index] / (shots[index] + 1);
+    }
+}

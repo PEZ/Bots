@@ -1,0 +1,520 @@
+package pez.nn;
+import robocode.*;
+import pez.nn.nrlibj.*;
+import java.awt.geom.*;
+import java.awt.Polygon;
+import java.awt.Color;
+import java.util.*;
+
+// GB, by PEZ. Stupid and violent
+// $Id: newOrca.java.txt,v 1.1 2003/04/11 20:44:51 peter Exp $
+
+public class newOrca extends AdvancedRobot {
+    private static Point2D location = new Point2D.Double();
+    private static Point2D oldLocation = new Point2D.Double();
+    private static Point2D enemyLocation = new Point2D.Double();
+    private static Point2D oldEnemyLocation = new Point2D.Double();
+    private static Rectangle2D fieldRectangle;
+    private static double wantedDistance = 500;
+    private static double maxX;
+    private static double maxY;
+    private boolean haveEnemy;
+    private static String enemyName;
+    private double enemyDistance;
+    private double enemyDistanceDelta;
+    private double enemyHeading;
+    private double enemyHeadingDelta;
+    private double enemyEnergy;
+    private double enemyEnergyDelta;
+    private double enemyVelocity;
+    private double absoluteBearing;
+    private double enemyBearingDelta;
+    private double enemyBulletPower;
+    private double bulletPower;
+    private long roundNum;
+    private boolean roundOver;
+    private int waitBeforeRam;
+    private static long time;
+    private static double rollingBearingDelta_1;
+    private static double rollingBearingDelta_2;
+    private static double meanOffsetFactor;
+    private static double meanAimFactor;
+    private static long wins;
+    private static long shots;
+    private static long hits;
+    private static long skippedTurns;
+
+    private double timeDelta;
+    private static double maxTimeDelta;
+    private static double maxDistance;
+    private static double maxVelocity = 8;
+    private static double maxEnemyBearingDiff = 44;
+    private static double maxEnemyBearingDelta = 7;
+    private static double maxEnemyDistanceDelta = 11;
+    private static double maxHeadingDelta = 6;
+    private final static int HISTORY_DEPTH = 4;
+    private final static int HISTORY_ITEMS = 1;
+    private static LinkedList nnHistoryList = new LinkedList();
+    private float[] nnHistoryArray = new float[HISTORY_DEPTH * HISTORY_ITEMS + 4];
+    private float[] nnCorrectAnswer = new float[1];
+    private float[] nnAnswer = new float[1];
+    private final static String NNdescr[] = {
+        "layer=0 tnode=8 nname=NodeLin",
+        "layer=1 tnode=15 nname=NodeSigm",
+        "layer=2 tnode=10 nname=NodeSigm",
+        "layer=3 tnode=1 nname=NodeSigm",
+        "linktype=all fromlayer=0 tolayer=1",
+        "linktype=all fromlayer=1 tolayer=2",
+        "linktype=all fromlayer=2 tolayer=3"
+    };
+    private final static String NNdescrAlt[] = {
+        "layer=0 tnode=8 nname=NodeLin",
+        "layer=1 tnode=55 nname=NodeSigm",
+        "layer=2 tnode=1 nname=NodeSigm",
+        "linktype=all fromlayer=0 tolayer=1",
+        "linktype=all fromlayer=1 tolayer=2"
+    };
+    private static pez.nn.nrlibj.NNet nnet;
+    private double nnError;
+
+    public void run() {
+        if (fieldRectangle == null) {
+            roundNum = getRoundNum();
+            fieldRectangle = new Rectangle2D.Double(0, 0 , getBattleFieldWidth(), getBattleFieldHeight());
+            setColors(Color.black, Color.white, Color.white);
+            maxDistance = (new Point2D.Double(20,20)).distance(
+                new Point2D.Double(fieldRectangle.getWidth() - 20, fieldRectangle.getHeight() - 20));
+            maxX = (fieldRectangle.getWidth() - 40);
+            maxY = (fieldRectangle.getHeight() - 40);
+        }
+        waitBeforeRam = 100;
+        roundOver = false;
+        setAdjustGunForRobotTurn(true);
+        setAdjustRadarForGunTurn(true);
+        addCustomEvent(new GunAimedCondition());
+
+        while (true) {
+            setMaxVelocity(Math.abs(getTurnRemaining()) > 45 ? 0.1 : 8.0);
+            if (!haveEnemy) {
+                setTurnRadarLeft(22.5);
+                dodge();
+            }
+            haveEnemy = false;
+            execute();
+        }
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+        double radarTurn;
+        enemyName = e.getName();
+        if (nnet == null) {
+            try {
+                nnet = new pez.nn.nrlibj.NNet(fileName(enemyName), true, this);
+            }
+            catch (Exception ex) {
+                pez.nn.nrlibj.NrPop.setSeed();
+                nnet = new pez.nn.nrlibj.NNet(NNdescr);
+            }
+        }
+        oldLocation.setLocation(location);
+        location.setLocation(getX(), getY());
+        oldEnemyLocation.setLocation(enemyLocation);
+        absoluteBearing = getHeading() + e.getBearing();
+        enemyEnergyDelta = enemyEnergy - e.getEnergy();
+        enemyEnergy = e.getEnergy();
+        enemyVelocity = e.getVelocity();
+        enemyDistance = e.getDistance();
+        toLocation(absoluteBearing, enemyDistance, location, enemyLocation);
+        setBulletPower();
+        timeDelta = getTime() - time;
+        if (timeDelta > 0) {
+            if (timeDelta > maxTimeDelta) {
+                maxTimeDelta = timeDelta;
+            }
+            enemyBearingDelta = normalRelativeAngle(absoluteBearing(oldLocation, enemyLocation) -
+                absoluteBearing(oldLocation, oldEnemyLocation)) / timeDelta;
+            enemyDistanceDelta = (oldLocation.distance(oldEnemyLocation) - oldLocation.distance(enemyLocation)) / timeDelta;
+            enemyHeadingDelta = (enemyHeading - e.getHeading()) / timeDelta;
+            time = getTime();
+            if (enemyBearingDelta <= maxEnemyBearingDelta) {
+                record();
+            }
+        }
+        enemyHeading= e.getHeading();
+        haveEnemy = true;
+        radarTurn = normalRelativeAngle(getHeading() + e.getBearing() - getRadarHeading()) * 2;
+        setTurnRadarRight(radarTurn);
+        if (getGunHeat() / getGunCoolingRate() < 2) {
+            aimGun();
+        }
+        else {
+            setTurnGunRight(normalRelativeAngle(absoluteBearing - getGunHeading()));
+        }
+        if (enemyEnergy == 0 && getOthers() == 1) {
+            if (waitBeforeRam-- == 0) {
+                goTo(enemyLocation);
+            }
+        }
+        if (enemyEnergyDelta > 0.1 && enemyEnergyDelta < 3.0) {
+            enemyBulletPower = enemyEnergyDelta;
+        }
+        dodge();
+    }
+
+    public void onCustomEvent(CustomEvent e) {
+        if (e.getCondition() instanceof GunAimedCondition) {
+            if (enemyEnergy > 0 && getOthers() > 0) {
+                Bullet bullet = setFireBullet(bulletPower);
+                if (bullet != null) {
+                    addCustomEvent(new CheckUpdateFactors(bullet));
+                }
+            }
+        }
+    }
+
+    public void onBulletHit(BulletHitEvent e) {
+        hits++;
+    }
+
+    public void onWin(WinEvent e) {
+        wins++;
+        if (!roundOver) {
+            printStats();
+            saveNN(fileName(enemyName));
+        }
+        roundOver = true;
+    }
+
+    public void onDeath(DeathEvent e) {
+        if (!roundOver) {
+            printStats();
+            saveNN(fileName(enemyName));
+        }
+        roundOver = true;
+    }
+
+    public void onSkippedTurn(SkippedTurnEvent e) {
+        skippedTurns++;
+    }
+
+    private double percentageRounded(double observations, double population) {
+        return Math.round(10000.0 * observations / population) / 100.0;
+    }
+
+    private double percentageRounded(long observations, long population) {
+        return percentageRounded((double)observations, (double)population);
+    }
+    
+    private double percentageRounded(double observations, long population) {
+        return percentageRounded(observations, (double)population);
+    }
+
+    private double percentageRounded(long observations, double population) {
+        return percentageRounded((double)observations, population);
+    }
+    
+    private void printStats() {
+        System.out.println("Wins: " + wins + " (" + percentageRounded(wins, getRoundNum() +1) + "%)");
+        System.out.println("Hits / Shots = Ratio: " + hits + " / " + shots + " = " +
+            percentageRounded(hits, shots) + "%");
+        System.out.println("nnError: " + nnError);
+        //System.out.println("skippedTurns: " + skippedTurns);
+    }
+
+    private void saveNN(String fileName) {
+       nnet.saveNNet(fileName, this);
+    }
+
+    private String fileName(String name) {
+        int index = name.indexOf(" ");
+        if (index != -1) {
+            return name.substring(0, index) + ".nn";
+        }
+        else {
+            return name + ".nn";
+        }
+    }
+
+    private void dodge() {
+        if (Math.abs(getDistanceRemaining()) < Math.random() * 30) {
+            Area escapeArea = escapeArea(enemyLocation, location, 80.0, 80.0,
+                fieldRectangle, enemyBulletPower);
+            double[] minMaxAngles = escapeMinMaxAngles(enemyLocation, location, escapeArea);
+            double relativeAngle = minMaxAngles[0] + (minMaxAngles[1] - minMaxAngles[0]) * Math.random();
+            double wantedDistanceExtra;
+            if (getEnergy() / enemyEnergy > 4.0) {
+                wantedDistanceExtra = -0.35;
+            }
+            else if (!isCornered()) {
+                if (enemyDistance < wantedDistance) {
+                    wantedDistanceExtra = 0.2;
+                }
+                else {
+                    wantedDistanceExtra = -0.2;
+                }
+            }
+            else {
+                wantedDistanceExtra = -0.5;
+            }
+            double wantedDistance = enemyDistance + enemyDistance * wantedDistanceExtra * Math.abs(relativeAngle) / 40.0;
+            double angle = absoluteBearing(enemyLocation, location) + relativeAngle;
+            Point2D dLocation = new Point2D.Double();
+            toLocation(angle, wantedDistance, enemyLocation, dLocation);
+            translateInsideField(dLocation, 35.0);
+            goTo(dLocation);
+        }
+    }
+
+    private Area escapeArea(Point2D gunLocation, Point2D targetLocation, double forwardAngle,
+        double backwardAngle, Rectangle2D battleField, double bulletPower) {
+        double distance = gunLocation.distance(targetLocation);
+        double maxTravelDistance = 8 * travelTime(distance, bulletVelocity(bulletPower));
+        double bearingToGun = absoluteBearing(targetLocation, gunLocation);
+        Area escapeArea;
+        Rectangle2D escapeRect;
+        double totAreaSize;
+        Point2D point = new Point2D.Double();
+        Polygon escapePolygon = new Polygon();
+        toLocation(bearingToGun, 5.0, targetLocation, point);
+        escapePolygon.addPoint((int)point.getX(), (int)point.getY());
+        toLocation(bearingToGun - forwardAngle, maxTravelDistance, targetLocation, point);
+        escapePolygon.addPoint((int)point.getX(), (int)point.getY());
+        toLocation(bearingToGun - 90.0, maxTravelDistance, targetLocation, point);
+        escapePolygon.addPoint((int)point.getX(), (int)point.getY());
+        toLocation(bearingToGun - (180.0 - backwardAngle), maxTravelDistance, targetLocation, point);
+        escapePolygon.addPoint((int)point.getX(), (int)point.getY());
+        toLocation(bearingToGun - 180.0, 5.0, targetLocation, point);
+        escapePolygon.addPoint((int)point.getX(), (int)point.getY());
+        toLocation(bearingToGun + (180.0 - backwardAngle), maxTravelDistance, targetLocation, point);
+        escapePolygon.addPoint((int)point.getX(), (int)point.getY());
+        toLocation(bearingToGun + 90.0, maxTravelDistance, targetLocation, point);
+        escapePolygon.addPoint((int)point.getX(), (int)point.getY());
+        toLocation(bearingToGun + forwardAngle, maxTravelDistance, targetLocation, point);
+        escapePolygon.addPoint((int)point.getX(), (int)point.getY());
+        escapeArea = new Area(escapePolygon);
+        escapeRect = escapeArea.getBounds2D(); 
+        escapeArea.intersect(new Area(battleField));
+        escapeRect = escapeArea.getBounds2D(); 
+        return escapeArea;
+    }
+
+    private double[] escapeMinMaxAngles(Point2D gunLocation, Point2D targetLocation, Area escapeArea) {
+        double[] angles = new double[2];
+        double min = java.lang.Double.POSITIVE_INFINITY;
+        double max = java.lang.Double.NEGATIVE_INFINITY;
+        double bearingToTarget = absoluteBearing(gunLocation, targetLocation);
+        PathIterator pathIterator = escapeArea.getPathIterator(null);
+        double[] points = new double[6];
+        Point2D point = new Point2D.Double();
+        while (!pathIterator.isDone()) {
+            int type = pathIterator.currentSegment(points);
+            if (type != java.awt.geom.PathIterator.SEG_CLOSE) {
+                point.setLocation(points[0], points[1]);
+                double angle = absoluteBearing(gunLocation, point);
+                angle = normalRelativeAngle(angle - bearingToTarget);
+                if (angle < min) {
+                    min = angle;
+                }
+                if (angle > max) {
+                    max = angle;
+                }
+            }
+            pathIterator.next();
+        }
+        angles[0] = min;
+        angles[1] = max;
+        return angles;
+    }
+
+    private boolean isCornered() {
+        double m = 180;
+        double mnX = m;
+        double mnY = m;
+        double mxX = fieldRectangle.getWidth() - m;
+        double mxY = fieldRectangle.getHeight() - m;
+        double x = location.getX();
+        double y = location.getY();
+        if ((x < mnX && (y < mnY || y > mxY)) || (x > mxX && (y < mnY || y > mxY))) {
+            return true;
+        }
+        return false;
+    }
+
+    private static double bulletVelocity(double power) {
+        return 20 - 3 * power;
+    }
+
+    private static long travelTime(double distance, double velocity) {
+        return (int)Math.round(distance / velocity);
+    }
+
+    private void setBulletPower() {
+        double power = 3;
+        power = Math.min(enemyEnergy / 3, 3);
+        power = Math.min(getEnergy() / 2, 3);
+        bulletPower = power;
+    }
+
+    private void aimGun() {
+        double guessedDistance = location.distance(enemyLocation);
+        double guessedHeading = absoluteBearing(location, enemyLocation);
+        if (Math.abs(enemyBearingDelta) > 0.05) {
+            guessedHeading += enemyBearingDelta * meanAimFactor;
+        }
+        else {
+            guessedHeading += meanOffsetFactor;
+        }
+        if (nnError > 0) {
+            nnet.frwNNet(nnHistoryArray, nnAnswer);
+            guessedHeading += (0 - maxEnemyBearingDiff) + maxEnemyBearingDiff * 2 * nnAnswer[0];
+        }
+        Point2D impactLocation = new Point2D.Double();
+        toLocation(guessedHeading, guessedDistance, location, impactLocation);
+        translateInsideField(impactLocation, 1);
+        guessedHeading = absoluteBearing(location, impactLocation);
+        setTurnGunRight(normalRelativeAngle(guessedHeading - getGunHeading()));
+    }
+
+    private void goTo(Point2D point) {
+        double distance = location.distance(point);
+        double angle = normalRelativeAngle(absoluteBearing(location, point) - getHeading());
+        if (Math.abs(angle) > 90) {
+            distance *= -1;
+            if (angle > 0) {
+                angle -= 180;
+            }
+            else {
+                angle += 180;
+            }
+        }
+        setTurnRight(angle);
+        setAhead(distance);
+    }
+
+    private void translateInsideField(Point2D point, double margin) {
+        point.setLocation(Math.max(margin, Math.min(fieldRectangle.getWidth() - margin, point.getX())),
+                          Math.max(margin, Math.min(fieldRectangle.getHeight() - margin, point.getY())));
+    }
+
+    private static void toLocation(double angle, double length, Point2D sourceLocation, Point2D targetLocation) {
+        targetLocation.setLocation(sourceLocation.getX() + Math.sin(Math.toRadians(angle)) * length,
+                                   sourceLocation.getY() + Math.cos(Math.toRadians(angle)) * length);
+    }
+
+    private static double absoluteBearing(Point2D source, Point2D target) {
+        return Math.toDegrees(Math.atan2(target.getX() - source.getX(), target.getY() - source.getY()));
+    }
+
+    private static double normalRelativeAngle(double angle) {
+        double relativeAngle = angle % 360;
+        if (relativeAngle <= -180 )
+            return 180 + (relativeAngle % 180);
+        else if ( relativeAngle > 180 )
+            return -180 + (relativeAngle % 180);
+        else
+            return relativeAngle;
+    }
+
+    private static double rollingAvg(double value, double newEntry, double n, double weighting ) {
+        return (value * n + newEntry * weighting)/(n + weighting);
+    } 
+
+    private static float nnNormalizedValue(double value, double max) {
+        return (float)((value + max) / (2 * max));
+    }
+
+    private void record() {
+        rollingBearingDelta_1 = rollingAvg(rollingBearingDelta_1, enemyBearingDelta, 3, 1);
+        rollingBearingDelta_2 = rollingAvg(rollingBearingDelta_2, enemyBearingDelta, 8, 1);
+        /*
+        Area escapeArea = escapeArea(enemyLocation, location, 80.0, 80.0,
+            fieldRectangle, enemyBulletPower);
+        double[] minMaxAngles = escapeMinMaxAngles(enemyLocation, location, escapeArea);
+        */
+        nnHistoryList.addLast(new Double(nnNormalizedValue(enemyBearingDelta, maxEnemyBearingDelta)));
+        //nnHistoryList.addLast(new Double(enemyLocation.getX() / maxX));
+        //nnHistoryList.addLast(new Double(enemyLocation.getY() / maxY));
+        //nnHistoryList.addLast(new Double(location.getX() / maxX));
+        //nnHistoryList.addLast(new Double(location.getY() / maxY));
+        //nnHistoryList.addLast(new Double((float)(enemyVelocity / maxVelocity)));
+        //nnHistoryList.addLast(new Double(nnNormalizedValue(enemyHeadingDelta, maxHeadingDelta)));
+        //nnHistoryList.addLast(new Double(nnNormalizedValue(enemyDistanceDelta, maxEnemyDistanceDelta)));
+
+        if (nnHistoryList.size() > HISTORY_DEPTH * HISTORY_ITEMS) {
+            for (int i = 0; i < HISTORY_ITEMS; i++) {
+                nnHistoryList.removeFirst();
+            }
+            int i;
+            for (i = 0; i < HISTORY_DEPTH * HISTORY_ITEMS; i++) {
+                nnHistoryArray[i] = ((Double)(nnHistoryList.get(i))).floatValue();
+            }
+
+            nnHistoryArray[i++] = (float)(bulletPower / 3);
+            nnHistoryArray[i++] = (float)(enemyDistance / maxDistance);
+            nnHistoryArray[i++] = nnNormalizedValue(rollingBearingDelta_1, maxEnemyBearingDelta);
+            nnHistoryArray[i++] = nnNormalizedValue(rollingBearingDelta_2, maxEnemyBearingDelta);
+            /*
+            nnHistoryArray[i++] = nnNormalizedValue(Math.abs(minMaxAngles[0]), maxEnemyBearingDiff);
+            nnHistoryArray[i++] = nnNormalizedValue(Math.abs(minMaxAngles[0]), maxEnemyBearingDiff);
+               nnHistoryArray[i++] = (float)(enemyLocation.getX(), maxX);
+               nnHistoryArray[i++] = (float)(enemyLocation.getY(), maxY);
+               nnHistoryArray[i++] = (float)(location.getX(), maxX);
+               nnHistoryArray[i++] = (float)(location.getY(), maxY);
+             */
+        }
+    }
+
+    class CheckUpdateFactors extends Condition {
+        private long time;
+        private double bulletVelocity;
+        private double bulletPower;
+        private double bearingDelta;
+        private Point2D oldRLocation = new Point2D.Double();
+        private Point2D oldELocation = new Point2D.Double();
+        private double oldBearing;
+	private float[] history = new float[HISTORY_DEPTH * HISTORY_ITEMS + 4];
+
+        public CheckUpdateFactors(Bullet bullet) {
+            this.time = getTime();
+            this.bulletVelocity = bullet.getVelocity();
+            this.bulletPower = bullet.getPower();
+            this.bearingDelta = enemyBearingDelta;
+            this.oldRLocation.setLocation(location);
+            this.oldELocation.setLocation(enemyLocation);
+            this.oldBearing = absoluteBearing(oldRLocation, oldELocation);
+            System.arraycopy(nnHistoryArray, 0, history, 0, nnHistoryArray.length);
+        }
+
+        public boolean test() {
+            if (getOthers() == 0) {
+                removeCustomEvent(this);
+                return false;
+            }
+            double bulletDistance = bulletVelocity * (getTime() - time);
+            if (bulletDistance > location.distance(enemyLocation) - 10) {
+                shots++;
+                double impactBearing = absoluteBearing(oldRLocation, enemyLocation);
+                double bearingDiff = normalRelativeAngle(impactBearing - oldBearing);
+                if (bearingDiff <= maxEnemyBearingDiff) {
+                    if (nnHistoryList.size() == HISTORY_DEPTH * HISTORY_ITEMS) { 
+                        nnCorrectAnswer[0] = nnNormalizedValue(bearingDiff, maxEnemyBearingDiff);
+                        nnError = nnet.ebplearnNNet(history, nnCorrectAnswer);
+                    }
+                    meanOffsetFactor = rollingAvg(meanOffsetFactor, bearingDiff, 2, this.bulletPower);
+                    if (Math.abs(bearingDelta) > 0.05 && bearingDelta <= maxEnemyBearingDelta) {
+                        double factor = bearingDiff / bearingDelta;
+                        meanAimFactor = rollingAvg(meanAimFactor, factor, 75, this.bulletPower);
+                    }
+                }
+                removeCustomEvent(this);
+            }
+            return false;
+        }
+    }
+
+    class GunAimedCondition extends Condition {
+        public boolean test() {
+            return (getGunHeat() == 0 && getGunTurnRemaining() == 0);
+        }
+    }
+}

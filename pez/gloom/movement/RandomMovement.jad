@@ -1,0 +1,91 @@
+// Decompiled by Jad v1.5.8e. Copyright 2001 Pavel Kouznetsov.
+// Jad home page: http://www.geocities.com/kpdus/jad.html
+// Decompiler options: fullnames braces fieldsfirst nonlb space 
+
+package pez.movement;
+
+import java.awt.geom.Point2D;
+import java.awt.geom.Rectangle2D;
+import pez.Enemy;
+import pez.Marshmallow;
+import pez.MarshmallowConstants;
+import pez.Rutils;
+
+// Referenced classes of package pez.movement:
+//            MovementStrategy, Factor, MovementData
+
+public class RandomMovement extends pez.movement.MovementStrategy
+    implements pez.MarshmallowConstants {
+
+    private double accumulatedAngle;
+
+    public RandomMovement() {
+        moveFactors = (new pez.movement.Factor[] {
+            new Factor(0.63500000000000001D)
+        });
+        m_name = "RandomMovement";
+    }
+
+    public pez.movement.MovementData getMovementData(pez.Enemy enemy, pez.Marshmallow marshmallow) {
+        pez.movement.MovementData movementdata = new MovementData();
+        if (marshmallow.moveFinished()) {
+            java.awt.geom.Point2D.Double double1 = new java.awt.geom.Point2D.Double();
+            double d = 20D - 3D * enemy.getEFirePower();
+            double d1 = java.lang.Math.abs(java.lang.Math.toDegrees(java.lang.Math.asin(8D / d)));
+            double d2 = pez.Rutils.pointsToAngle(oldEnemyLocation, marshmallow.getLocation()) - pez.Rutils.pointsToAngle(oldEnemyLocation, oldRobotLocation);
+            accumulatedAngle += d2;
+            double d3 = distanceFactor(enemy.getDistance(), enemy.getEFirePower());
+            double d4 = d3 * (d1 * 2D * java.lang.Math.random() - d1);
+            double d5 = accumulatedAngle / d1;
+            if (java.lang.Math.abs(d5) > 1.0D) {
+                d4 *= -1.7D * (double)pez.Rutils.sign(accumulatedAngle) * java.lang.Math.abs(d4);
+            }
+            double d6 = distanceExtra(enemy, marshmallow);
+            d6 *= java.lang.Math.abs(d4);
+            pez.Rutils.toLocation(enemy.getAbsoluteBearing() + 180D + d4, enemy.getDistance() + d6, enemy.getLocation(), double1);
+            if (!marshmallow.getFluffedFieldRectangle().contains(double1)) {
+                pez.Rutils.toLocation((enemy.getAbsoluteBearing() + 180D) - d4, enemy.getDistance() + d6, enemy.getLocation(), double1);
+            }
+            marshmallow.translateInsideField(double1, 39D);
+            for (; !doRam(enemy, marshmallow) && enemy.getLocation().distance(double1) < enemy.getLocation().distance(marshmallow.getLocation()) - enemy.getLocation().distance(marshmallow.getLocation()) / 7D; pez.Rutils.toLocation(pez.Rutils.pointsToAngle(marshmallow.getLocation(), double1), marshmallow.getLocation().distance(double1) / 2D, marshmallow.getLocation(), double1)) { }
+            oldEnemyLocation.setLocation(enemy.getLocation());
+            oldRobotLocation.setLocation(marshmallow.getLocation());
+            movementdata.setDestination(double1);
+        }
+        return movementdata;
+    }
+
+    private double distanceFactor(double d, double d1) {
+        double d2 = 20D - 3D * d1;
+        double d3 = d / d2;
+        if (d1 > 2.5D) {
+            return java.lang.Math.max(1.0D, 0.33000000000000002D + d3 / 87D);
+        } else {
+            return 0.72999999999999998D + d3 / 685D;
+        }
+    }
+
+    private double distanceExtra(pez.Enemy enemy, pez.Marshmallow marshmallow) {
+        double d = 5D;
+        if (doRam(enemy, marshmallow)) {
+            d = -12D;
+        } else
+        if (marshmallow.isLoosing(enemy)) {
+            d = -3D;
+        } else
+        if (marshmallow.isCornered() && enemy.getDistance() >= 200D) {
+            d = -0.5D;
+        } else
+        if (enemy.getDistance() < 200D) {
+            d = 12D;
+        } else
+        if (enemy.getDistance() > 600D) {
+            d = -1D;
+        }
+        return d;
+    }
+
+    private boolean doRam(pez.Enemy enemy, pez.Marshmallow marshmallow) {
+        return enemy.getEnergy() == 0.0D && marshmallow.getOthers() == 1;
+    }
+}

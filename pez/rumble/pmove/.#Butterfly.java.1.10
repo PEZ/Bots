@@ -1,0 +1,404 @@
+package pez.rumble.pmove;
+import pez.rumble.utils.*;
+import robocode.*;
+import robocode.util.Utils;
+import java.util.*;
+import java.util.zip.*;
+import java.io.*;
+import java.awt.geom.*;
+
+// Butterfly, a movement by PEZ. For CassiusClay - Float like a butterfly!
+// http://robowiki.net/?CassiusClay
+//
+// This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
+// http://robowiki.net/?RWPCL
+// (Basically it means you must keep the code public if you base any bot on it.)
+//
+// $Id: Butterfly.java,v 1.3 2004/06/04 22:38:51 peter Exp $
+
+
+public class Butterfly {
+    static final double MAX_VELOCITY = 8;
+
+    static final double MAX_WALL_SMOOTH_TRIES = 150;
+    static final double WALL_MARGIN = 22;
+
+    static final double MAX_DISTANCE = 900;
+
+    static Rectangle2D fieldRectangle;
+    static Point2D robotLocation = new Point2D.Double();
+    static Point2D enemyLocation = new Point2D.Double();
+    static double enemyAbsoluteBearing;
+    static double enemyDistance;
+    static int distanceIndex;
+    static double enemyEnergy;
+    static double enemyVelocity;
+    static double enemyFirePower = 2.5;
+    static int lastVelocityIndex;
+    static double velocity;
+    static int timeSinceVChange;
+    static double roundNum;
+    static String enemyName = "";
+    static long lastScanTime;
+    static long time;
+
+    double direction = 1.0;
+    double roundsLeft;
+    MovementWave stopWave;
+    AdvancedRobot robot;
+
+    public Butterfly(AdvancedRobot robot) {
+	this.robot = robot;
+	MovementWave.reset();
+	enemyEnergy = 100;
+	fieldRectangle = PUtils.fieldRectangle(robot, WALL_MARGIN);
+
+	if (roundNum > 0) {
+	    System.out.println("range hits taken: " + (int)MovementWave.rangeHits + " (average / round: " + java.text.NumberFormat.getNumberInstance().format(MovementWave.rangeHits / roundNum) + ")");
+	}
+
+	roundsLeft = robot.getNumRounds() - roundNum - 1;
+	roundNum++;
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+	time = robot.getTime();
+	MovementWave wave = new MovementWave(robot, this);
+	if (enemyName == "") {
+	    enemyName = e.getName();
+	    restoreFactors();
+	}
+
+	double wallDamage = 0;
+	if (Math.abs(e.getVelocity()) == 0 && Math.abs(enemyVelocity) > 2.0) {
+	    wallDamage = Math.max(0, Math.abs(enemyVelocity) / 2 - 1);
+	}
+	enemyVelocity = e.getVelocity();
+
+	Point2D lastEnemyLocation = new Point2D.Double(enemyLocation.getX(), enemyLocation.getY());
+	wave.setGunLocation(lastEnemyLocation);
+	double robotBearing = wave.gunBearing(robotLocation);
+	wave.setStartBearing(robotBearing);
+
+	double enemyDeltaEnergy = enemyEnergy - e.getEnergy() - wallDamage;
+	if (enemyDeltaEnergy >= 0.1 && enemyDeltaEnergy <= 3.0) {
+	    enemyFirePower = enemyDeltaEnergy;
+	    wave.surfable = true;
+	}
+	enemyEnergy = e.getEnergy();
+	double bulletVelocity = PUtils.bulletVelocity(enemyFirePower);
+	wave.setBulletVelocity(bulletVelocity);
+
+	direction = robotBearingDirection(robotBearing);
+	double bearingDirection = wave.maxEscapeAngle() * direction / (double)MovementWave.MIDDLE_FACTOR;
+	wave.setBearingDirection(bearingDirection);
+
+	distanceIndex = (int)Math.min(MovementWave.DISTANCE_INDEXES - 1, (enemyDistance / (MAX_DISTANCE / MovementWave.DISTANCE_INDEXES)));
+	wave.distanceIndex = distanceIndex;
+	int velocityIndex = (int)Math.abs(velocity / 2);
+	velocity = robot.getVelocity();
+	if (velocityIndex != lastVelocityIndex) {
+	    timeSinceVChange = 0;
+	}
+	wave.velocityIndex = velocityIndex;
+	wave.lastVelocityIndex = lastVelocityIndex;
+	lastVelocityIndex = velocityIndex;
+	wave.vChangeIndex = (int)minMax(Math.pow((bulletVelocity * timeSinceVChange++) / (enemyDistance / timeSinceVChange), 0.35), 0, MovementWave.TIMER_INDEXES - 1);
+
+	wave.setTargetLocation(robotLocation);
+
+	robotLocation.setLocation(new Point2D.Double(robot.getX(), robot.getY()));
+	enemyAbsoluteBearing = robot.getHeadingRadians() + e.getBearingRadians();
+	enemyLocation.setLocation(project(robotLocation, enemyAbsoluteBearing, enemyDistance));
+	enemyDistance = e.getDistance();
+
+	wave.advance(2);
+	robot.addCustomEvent(wave);
+
+	MovementWave closestSurfable = (MovementWave)Wave.findClosest(MovementWave.surfables, robotLocation);
+	Point2D orbitLocation = getOrbitLocation(closestSurfable);
+
+	Point2D forward = wallSmoothedDestination(robotLocation, orbitLocation, direction);
+	Point2D reverse = wallSmoothedDestination(robotLocation, orbitLocation, -direction);
+	Point2D destination = forward;
+	double wantedVelocity = MAX_VELOCITY;
+	if (stopWave != null) {
+	    wantedVelocity = 0;
+	}
+	else {
+	    if (MovementWave.surfables.size() == 0 && enemyLocation.distance(reverse) / enemyLocation.distance(forward) > 1.05) {
+		destination = reverse;
+	    }
+	    if (MovementWave.dangerReverse < MovementWave.dangerForward || MovementWave.dangerStop < MovementWave.dangerForward) {
+		if (wave.distanceIndex > 1 && MovementWave.dangerStop < MovementWave.dangerReverse) {
+		    wantedVelocity = 0;
+		    stopWave = closestSurfable;
+		}
+		else {
+		    destination = reverse;
+		}
+	    }
+	}
+
+	double angle;
+	robot.setAhead(Math.cos(angle = absoluteBearing(robotLocation, destination) - robot.getHeadingRadians()) * 100);
+	robot.setTurnRightRadians(Math.tan(angle));
+
+	robot.setMaxVelocity(wantedVelocity);
+	
+	if (MovementWave.hitsTaken == 0 && robot.getEnergy() > 25 && ((roundsLeft < 6 && enemyFirePower < 0.3) || (roundsLeft < 3 && enemyFirePower < (3.01 - roundsLeft)))) {
+	    robot.setMaxVelocity(0);
+	}
+
+	MovementWave.reset();
+	lastScanTime = robot.getTime();
+    }
+
+    public void onHitByBullet(HitByBulletEvent e) {
+	MovementWave.hitsTaken++;
+	if (enemyDistance > 150) {
+	    MovementWave.rangeHits++;
+	}
+	MovementWave.registerHit(e.getBullet());
+        enemyEnergy += 3 * e.getBullet().getPower();
+    }
+
+    public void onBulletHit(BulletHitEvent e){
+        double power = e.getBullet().getPower();
+        enemyEnergy -= 4 * power + Math.max(2 * power - 1, 0);
+    }
+
+    public void onBulletHitBullet(BulletHitBulletEvent e) {
+	MovementWave.registerHit(e.getHitBullet());
+    }
+
+    public void restoreFactors() {
+	MovementWave.restoreFactors(enemyName);
+    }
+
+    public void saveFactors() {
+	MovementWave.saveFactors(enemyName);
+    }
+
+    static Point2D getOrbitLocation(MovementWave wave) {
+	if (wave == null || distanceIndex < 1) {
+	    return enemyLocation;
+	}
+	else {
+	    return wave.getGunLocation();
+	}
+    }
+
+    static Point2D wallSmoothedDestination(Point2D location, Point2D orbitLocation, double direction) {
+	Point2D destination = location;
+	double evasion = 1;
+	if (time < 16) {
+	    evasion = 1.5;
+	}
+	else {
+	    if (MovementWave.surfables.size() > 0) {
+		evasion = PUtils.minMax(500 / enemyLocation.distance(location), 1.1, 1.3);
+	    }
+	    else  {
+		evasion = PUtils.minMax(300 / enemyLocation.distance(location), 0.75, 1.5);
+	    }
+	}
+	//for (int i = 0; i < 2; i++) {
+	    double smoothing = 0;
+	    while (!fieldRectangle.contains(destination = project(location,
+			    absoluteBearing(location, orbitLocation) - direction * ((evasion - smoothing / 100) * Math.PI / 2), 135)) &&
+		    smoothing < MAX_WALL_SMOOTH_TRIES) {
+		smoothing++;
+	    }
+	    //if (distanceIndex > 0 || smoothing < 28) {
+		//break;
+	    //}
+	    //direction = -direction;
+	//}
+	return destination;
+    }
+
+    void updateDirectionStats(MovementWave wave) {
+	MovementWave.dangerForward += wave.danger(waveImpactLocation(wave, 1.0));
+	MovementWave.dangerReverse += wave.danger(waveImpactLocation(wave, -1.0));
+	MovementWave.dangerStop += wave.danger(project(robotLocation, robot.getHeadingRadians(), robot.getVelocity() * 1.5));
+    }
+
+    Point2D waveImpactLocation(MovementWave wave, double direction) {
+	Point2D orbitLocation = getOrbitLocation(wave);
+	double currentDirection = robotBearingDirection(wave.gunBearing(robotLocation));
+	double v = Math.abs(robot.getVelocity()) * sign(direction);
+	Point2D impactLocation = new Point2D.Double(robot.getX(), robot.getY());
+	double time = 0;
+	do {
+	    impactLocation = project(impactLocation, absoluteBearing(impactLocation,
+		wallSmoothedDestination(impactLocation, orbitLocation, currentDirection * direction)), v);
+	    v = Math.min(MAX_VELOCITY, v + (v < 0 ? 2 : 1));
+	    time++;
+	} while (wave.distance(impactLocation, (int)time) > -10);
+	return impactLocation;
+    }
+
+    double robotBearingDirection(double bearing) {
+	return sign(robot.getVelocity() * Math.sin(robot.getHeadingRadians() - bearing));
+    }
+
+    static Point2D project(Point2D sourceLocation, double angle, double length) {
+	return new Point2D.Double(sourceLocation.getX() + Math.sin(angle) * length,
+		sourceLocation.getY() + Math.cos(angle) * length);
+    }
+
+    static double absoluteBearing(Point2D source, Point2D target) {
+	return Math.atan2(target.getX() - source.getX(), target.getY() - source.getY());
+    }
+
+    static int sign(double v) {
+        return v < 0 ? -1 : 1;
+    }
+
+    static double minMax(double v, double min, double max) {
+	return Math.max(min, Math.min(max, v));
+    }
+}
+
+class MovementWave extends Wave {
+    static final int BULLET_POWER_INDEXES = 5;
+    static final int DISTANCE_INDEXES = 5;
+    static final int VELOCITY_INDEXES = 5;
+    static final int TIMER_INDEXES = 4;
+    static final int WALL_INDEXES = 3;
+    static final double WALL_INDEX_WIDTH = 7;
+    static final int FACTORS = 45;
+    static final int MIDDLE_FACTOR = (FACTORS - 1) / 2;
+
+    static float[][][][] visitCounts = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][VELOCITY_INDEXES][FACTORS];
+    static float[][][] hitCountsTimer = new float[DISTANCE_INDEXES][TIMER_INDEXES][FACTORS];
+    static float[][][][] hitCountsVelocity = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][VELOCITY_INDEXES][FACTORS];
+    static float[] fastHitCounts = new float[FACTORS];
+ 
+    static double rangeHits;
+    static double dangerForward;
+    static double dangerReverse;
+    static double dangerStop;
+    static List waves = new ArrayList();
+    static List surfables = new ArrayList();
+    static double hitsTaken;
+
+    boolean surfable;
+    Butterfly floater;
+    int distanceIndex;
+    int velocityIndex;
+    int lastVelocityIndex;
+    int vChangeIndex;
+    boolean visitRegistered;
+
+    static void reset() {
+	waves = new ArrayList();
+	surfables = new ArrayList();
+	dangerForward = 0;
+	dangerReverse = 0;
+	dangerStop = 0;
+    }
+
+    public MovementWave(AdvancedRobot robot, Butterfly floater) {
+	init(robot, FACTORS);
+	this.floater = floater;
+    }
+
+    public boolean test() {
+	advance(1);
+	waves.add(this);
+	if (passed(-18)) {
+	    if (!visitRegistered) {
+		registerVisit();
+		visitRegistered = true;
+	    }
+	}
+	if (passed(18)) {
+	    getRobot().removeCustomEvent(this);
+	}
+	if (surfable) {
+	    surfables.add(this);
+	    floater.updateDirectionStats(this);
+	    if (passed(0)) {
+		floater.stopWave = null;
+	    }
+	}
+	return false;
+    }
+
+    static void restoreFactors(String enemyName) {
+	try {
+	    ObjectInputStream ois = new ObjectInputStream(new GZIPInputStream(new FileInputStream(robot.getDataFile(enemyName + ".float"))));
+            hitCountsVelocity = (float[][][][]) ois.readObject();
+	    System.out.println("Float data on " + enemyName + " read.");
+	} catch (Exception e) {
+	    hitCountsVelocity = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][VELOCITY_INDEXES][FACTORS];
+	    System.out.println("Error reading float data on " + enemyName + ": " + e);
+	}
+    }
+
+    static void saveFactors(String enemyName) {
+	try {
+	    ObjectOutputStream oos = new ObjectOutputStream(new GZIPOutputStream(new RobocodeFileOutputStream(robot.getDataFile(enemyName + ".float"))));
+	    oos.writeObject(hitCountsVelocity);
+	    oos.close();
+	} catch (IOException e) {
+	}
+    }
+
+
+    void registerVisit() {
+	int index = visitingIndex();
+	float[] visits = visitCounts[distanceIndex][velocityIndex][lastVelocityIndex];
+	registerHit(visits, index, 45.0, 200.0);
+    }
+
+    static void registerHit(Bullet bullet) {
+	Point2D bulletLocation = new Point2D.Double(bullet.getX(), bullet.getY());
+	MovementWave wave = (MovementWave)Wave.findClosest(waves, bulletLocation, bullet.getVelocity());
+	if (wave != null) {
+	    wave.registerHit(bullet.getHeadingRadians());
+	}
+    }
+
+    void registerHit(double bearing) {
+	registerHit(visitingIndex(bearing));
+    }
+
+    void registerHit(Point2D hitLocation) {
+	registerHit(visitingIndex(hitLocation));
+    }
+
+    void registerHit(float[] buffer, int index, double weight, double depth) {
+	for (int i = 0; i < FACTORS; i++) {
+	    buffer[i] =  (float)PUtils.rollingAvg(buffer[i], index == i ? weight : 0.0, depth);
+	}
+    }
+
+    void registerHit(int index) {
+	float[] hitsTimer = hitCountsTimer[distanceIndex][vChangeIndex];
+	float[] hitsVelocity = hitCountsVelocity[distanceIndex][velocityIndex][lastVelocityIndex];
+	float[] fastHits = fastHitCounts;
+	registerHit(hitsTimer, index, 100.0, 1.0);
+	registerHit(hitsVelocity, index, 100.0, 1.0);
+	registerHit(fastHits, index, 50.0, 2.0);
+    }
+
+    double danger(Point2D destination) {
+	int index = visitingIndex(destination);
+	float[] visits = visitCounts[distanceIndex][velocityIndex][lastVelocityIndex];
+	float[] hitsTimer = hitCountsTimer[distanceIndex][vChangeIndex];
+	float[] hitsVelocity = hitCountsVelocity[distanceIndex][velocityIndex][lastVelocityIndex];
+	float[] fastHits = fastHitCounts;
+	double smoothed = 0;
+	for (int i = 0; i < FACTORS; i++) {
+	    smoothed += ((isLowHitRate() ? 0 : visits[i] + hitsTimer[i]) + hitsVelocity[i] + fastHits[i]) / Math.pow((double)(Math.abs(index - i) + 1.0), 0.5);
+	}
+	return smoothed / Math.pow(travelTime(distance(0)), 0.5);
+    }
+
+    static boolean isLowHitRate() {
+	return hitsTaken / (Butterfly.roundNum + 1) < 1.5;
+    }
+}

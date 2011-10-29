@@ -1,0 +1,36 @@
+
+
+    private void moveRandomly(Point2D eLocation) {
+        if (getDistanceRemaining() < 2.0) {
+            Point2D destination = new Point2D.Double();
+            Point2D point = new Point2D.Double();
+            double absoluteBearing = pointsToAngle(location, eLocation);
+            double distance = location.distance(eLocation);
+            double maxDistance = 8.0 * distance / 11.0;
+            double length = maxDistance * 2;
+            double minX = location.getX() - maxDistance;
+            double minY = location.getY() - maxDistance;
+
+            Polygon badTriangle1 = new Polygon();
+            badTriangle1.addPoint((int)location.getX(), (int)location.getY());
+            toLocation(absoluteBearing - 70.0, maxDistance, location, point);
+            badTriangle1.addPoint((int)point.getX(), (int)point.getY());
+            toLocation(absoluteBearing + 70.0, maxDistance, location, point);
+            badTriangle1.addPoint((int)point.getX(), (int)point.getY());
+
+            Polygon badTriangle2 = new Polygon();
+            badTriangle2.addPoint((int)location.getX(), (int)location.getY());
+            toLocation(absoluteBearing + 180.0 - 45.0, maxDistance, location, point);
+            badTriangle2.addPoint((int)point.getX(), (int)point.getY());
+            toLocation(absoluteBearing + 180.0 + 45.0, maxDistance, location, point);
+            badTriangle2.addPoint((int)point.getX(), (int)point.getY());
+
+            do {
+                toLocation(random.nextDouble() * 360, random.nextDouble() * maxDistance, location, destination);
+            } while (badTriangle1.contains(destination) || badTriangle2.contains(destination));
+
+            translateInsideField(destination, 35.0);
+            goTo(destination);
+        }
+    }
+

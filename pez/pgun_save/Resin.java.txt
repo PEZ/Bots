@@ -1,0 +1,218 @@
+package pez.rumble.pgun;
+import pez.rumble.utils.*;
+import robocode.*;
+import robocode.util.Utils;
+import java.util.*;
+import java.awt.geom.*;
+
+// Resin, a gun by PEZ. For CassiusClay - Sting like a bee! (A Gigant Resin bee in this case.)
+// http://robowiki.net/?CassiusClay
+//
+// This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
+// http://robowiki.net/?RWPCL
+// (Basically it means you must keep the code public if you base any bot on it.)
+//
+// $Id: Resin.java.txt,v 1.1 2004/09/17 13:37:37 peter Exp $
+
+public class Resin {
+    public static boolean isTC = false; // TargetingChallenge
+
+    static final double WALL_MARGIN = 18;
+    static final double MAX_DISTANCE = 900;
+    static final double MAX_BULLET_POWER = 3.0;
+    static final double BULLET_POWER = 1.91;
+
+    static Map[] patterns = new HashMap[(int)(MAX_DISTANCE / 11)];
+
+    long lastScanTime;
+    Point2D enemyLocation = new Point2D.Double();
+    double lastEnemyBearingDirection = 0.73;
+    double lastHeading;
+    double lastVelocity;
+    List waves = new ArrayList();
+
+    Rectangle2D fieldRectangle;
+    AdvancedRobot robot;
+
+    public Resin(AdvancedRobot robot) {
+	this.robot = robot;
+	fieldRectangle = PUtils.fieldRectangle(robot, WALL_MARGIN);
+	PatternWave.pattern = "";
+	if (patterns[0] == null) {
+	    for (int i = 0, n = patterns.length; i < n; i++) {
+		patterns[i] = new HashMap();
+	    }
+	}
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+	// common wave based PEZ gun stuff that should be extracted to other classes ...
+	double enemyDistance = e.getDistance();
+	int distanceIndex = (int)Math.min(PatternWave.DISTANCE_INDEXES - 1, (enemyDistance / (MAX_DISTANCE / PatternWave.DISTANCE_INDEXES)));
+
+	double wantedBulletPower = isTC ? MAX_BULLET_POWER : distanceIndex > 0 ? BULLET_POWER : MAX_BULLET_POWER;
+	double bulletPower = wantedBulletPower;
+	if (!isTC) {
+	    bulletPower = Math.min(Math.min(e.getEnergy() / 4, robot.getEnergy() / 5), wantedBulletPower);
+	}
+	double bulletVelocity = PUtils.bulletVelocity(bulletPower);
+
+	PatternWave wave = new PatternWave(robot);
+	wave.setBulletVelocity(bulletVelocity);
+	wave.bulletPowerIndex = (int)(bulletPower / 0.65);
+	wave.distanceIndex = distanceIndex;
+	Point2D robotLocation = new Point2D.Double(robot.getX(), robot.getY());
+	wave.setGunLocation(robotLocation);
+	double enemyBearing = robot.getHeadingRadians() + e.getBearingRadians();
+	wave.setStartBearing(enemyBearing);
+	wave.setTargetLocation(enemyLocation);
+
+	double lateralVelocity = e.getVelocity() * Math.sin(e.getHeadingRadians() - enemyBearing);
+	if (e.getVelocity() != 0) {
+	    lastEnemyBearingDirection = wave.maxEscapeAngle() * PUtils.sign(lateralVelocity);
+	}
+	double bearingDirection = lastEnemyBearingDirection / (double)PatternWave.MIDDLE_FACTOR;
+	wave.setBearingDirection(bearingDirection);
+
+	enemyLocation.setLocation(PUtils.project(robotLocation, enemyBearing, enemyDistance));
+
+
+
+	long timeSinceLastScan = robot.getTime() - lastScanTime;
+	lastScanTime = robot.getTime();
+
+	//Pattern matching stuff..
+	waves.add(wave);
+	double approachVelocity = e.getVelocity() * -Math.cos(e.getHeadingRadians() - enemyBearing);
+	double headingChange = lastHeading - e.getHeading();
+	double velocity = e.getVelocity();
+	int lateralSign = lateralVelocity == 0 ? 0 : PUtils.sign(lateralVelocity);
+	int approachSign = approachVelocity == 0 ? 0 : PUtils.sign(approachVelocity);
+	for (int i = 0; i < timeSinceLastScan; i++) {
+	    PatternWave.addTick((int)(headingChange / timeSinceLastScan), (int)velocity, lateralSign, approachSign);
+	}
+	int matchingGF = matchingGF();
+	lastHeading = e.getHeading();
+	lastVelocity = e.getVelocity();
+	if (PatternWave.passingWave != null && waves.size() > PatternWave.passingWave.age * 2 && robot.getEnergy() > 0) {
+	    wave.preludePattern = PatternWave.passingWave.getPattern();
+	    if (PatternWave.passingWave.preludePattern != null) {
+		addPatternGF(PatternWave.passingWave);
+	    }
+	}
+	
+	//Aim and shoot!
+	robot.setTurnGunRightRadians(Utils.normalRelativeAngle(enemyBearing - robot.getGunHeadingRadians() +
+		    bearingDirection * (matchingGF - PatternWave.MIDDLE_FACTOR)));
+	if (isTC || robot.getEnergy() >= BULLET_POWER || e.getEnergy() < robot.getEnergy() / 3.0 || distanceIndex < 1) {
+	    robot.setFire(bulletPower);
+	}
+	if (robot.getOthers() > 0 && robot.getEnergy() > 0) {
+	    robot.addCustomEvent(wave);
+	}
+    }
+
+    static void addPatternGF(PatternWave wave) {
+	String pattern = wave.preludePattern;
+	for (int i = 0, n = Math.min(patterns.length - 1, pattern.length()); i <= n; i++) {
+	    String subPattern = pattern.substring(0, n - i);
+	    Map buffer = patterns[n - i];
+	    PatternGF pGF = (PatternGF)buffer.get(subPattern);
+	    if (pGF == null) {
+		pGF = new PatternGF();
+	    }
+	    pGF.guessFactors[wave.guessFactor]++;
+	    buffer.put(subPattern, pGF);
+	}
+    }
+
+    int matchingGF() {
+	int gf = PatternWave.MIDDLE_FACTOR;
+	if (PatternWave.passingWave != null) {
+	    String pattern = PatternWave.passingWave.getPattern();
+	    for (int i = 0, n = Math.min(patterns.length - 1, pattern.length()); i <= n; i++) {
+		PatternGF pGF = (PatternGF)(patterns[n - i].get(pattern.substring(0, n - i)));
+		if (pGF != null) {
+		    gf = pGF.mostVisited();
+//System.out.println("Found match. pattern = " + pattern.substring(0, n - i));
+		    break;
+		}
+	    }
+	}
+	return gf;
+    }
+}
+
+class PatternGF {
+    String pattern;
+    int[] guessFactors = new int[PatternWave.FACTORS];
+
+    int mostVisited() {
+	int mostVisitedIndex = PatternWave.MIDDLE_FACTOR;
+	double most = guessFactors[PatternWave.MIDDLE_FACTOR];
+	for (int i = 1; i < PatternWave.FACTORS; i++) {
+	    double visits = guessFactors[i];
+	    if (visits > most) {
+		mostVisitedIndex = i;
+		most = visits;
+	    }
+	}
+	return mostVisitedIndex;
+    }
+}
+
+class PatternWave extends Wave {
+    static final double MAX_VELOCITY = 8;
+    static final int BULLET_POWER_INDEXES = 5;
+    static final int DISTANCE_INDEXES = 7;
+    static final int WALL_INDEXES = 4;
+    static final double WALL_INDEX_WIDTH = 5.5;
+    static final int FACTORS = 37;
+    static final int MIDDLE_FACTOR = (FACTORS - 1) / 2;
+
+    static String pattern = "";
+    static PatternWave passingWave;
+
+    String myPattern;
+    String preludePattern;
+    int bulletPowerIndex;
+    int distanceIndex;
+    int guessFactor;
+    int age = 0;
+
+    public PatternWave(AdvancedRobot robot) {
+	init(robot, FACTORS);
+    }
+    
+    public boolean test() {
+	advance(1);
+	age++;
+	if (passed(0)) {
+	    if (getRobot().getOthers() > 0) {
+		guessFactor = visitingIndex();
+		passingWave = this;
+	    }
+	    getRobot().removeCustomEvent(this);
+	    myPattern = pattern.substring(pattern.length() - age);
+	}
+	return false;
+    }
+
+    public long getWaveOffset() {
+	return 0;
+    }
+
+
+    String getPattern() {
+	return (char)(64 + distanceIndex) + "" + (char)(64 + bulletPowerIndex) + "" + myPattern;
+    }
+
+    static void addTick(int headingChange, int velocity, int lateralSign, int approachSign) {
+        int key = 33;
+        key += 3 * 3 * MAX_VELOCITY * 2 * headingChange;
+        key += 3 * 3 * (MAX_VELOCITY + velocity);
+        key += 3 * (1 + lateralSign);
+        key += 1 + approachSign;
+        pattern += (char)(key);
+    }
+}

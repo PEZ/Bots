@@ -1,0 +1,522 @@
+package pez.frankie;
+import robocode.*;
+import java.awt.geom.Point2D;
+import java.awt.geom.Rectangle2D;
+import java.util.ArrayList;
+import java.awt.Color;
+import java.util.zip.*;
+import java.io.*;
+
+// Frankie - Pattern matching gun and random movement
+// http://robowiki.dyndns.org/?Frankie
+// $Id: Frankie.java,v 1.5 2003/06/25 05:56:20 peter Exp $
+
+public class Frankie extends AdvancedRobot {
+    static boolean isMovementChallenge = true;
+    //gun
+    static final long PM_LENGTH = 8000;
+    static final char BREAK_KEY = (char)0;
+    static final int NO_BEARING = -1000;
+
+    static StringBuffer pattern = new StringBuffer((int)PM_LENGTH);
+    static ArrayList movie = new ArrayList((int)PM_LENGTH);
+    static boolean movieIsFull = false;
+    static long movieSize = 0;
+    Point2D robotLocation = new Point2D.Double();
+    Point2D enemyLocation = new Point2D.Double();
+    double bulletPower = 3;
+    double bulletVelocity = 11;
+    String enemyName;
+    double enemyDistance;
+    double enemyBearing = NO_BEARING;
+    double enemyHeading;
+    double enemyEnergy = 100;
+    double guessedEnemyBearing;
+    double enemyLateralVelocity;
+    long timeSinceLastScan;
+    long time;
+    long maxMatchLength;
+    long accumulatedMatchLength;
+    long searches;
+    static long skippedTurns;
+    static boolean movieIsRestored = false;
+    static boolean movieIsSaved = false;
+
+    //movement
+    static final double DEFAULT_DISTANCE = 590;
+    static final double WALL_MARGIN = 39;
+    static final double MAX_VELOCITY = 8;
+    Rectangle2D fieldRectangle;
+    Rectangle2D fluffedFieldRectangle;
+    double velocity = MAX_VELOCITY;
+    double accumulatedAngle;
+    Point2D oldEnemyLocation;
+    Point2D oldRobotLocation;
+    Point2D destination;
+    double enemyBulletPower = 3;
+    boolean doRam = false;
+
+    public void run() {
+        setColors(Color.green.darker().darker(), Color.blue.brighter().brighter(), Color.yellow.brighter());
+        setAdjustRadarForGunTurn(true);
+        setAdjustGunForRobotTurn(true);
+        fieldRectangle = new Rectangle2D.Double(0, 0 , getBattleFieldWidth(), getBattleFieldHeight());
+        fluffedFieldRectangle = new Rectangle2D.Double(-125, -125 , getBattleFieldWidth() + 125, getBattleFieldHeight() + 125);
+        setEventPriority("ScannedRobotEvent", 99);
+        recordBreak(1);
+        do {
+            doRam = (!isMovementChallenge && enemyEnergy == 0 && getOthers() == 1);
+
+            doScanner();
+            double gunAlignmentDelta = normalRelativeAngle(getGunHeadingRadians() - guessedEnemyBearing);
+            if (time > 0 && Math.abs(gunAlignmentDelta) < Math.atan2(45, enemyDistance)) {
+                if (!isMovementChallenge && getEnergy() > 0.2) {
+                    setFire(bulletPower);
+                }
+            }
+            if (Math.random() < 0.15) {
+                velocity = Math.min(MAX_VELOCITY, Math.random() * 74);
+            }
+            if (enemyDistance < 400) {
+                setMaxVelocity(Math.abs(getTurnRemaining()) > 45 ? 0.1 : Math.min(MAX_VELOCITY, velocity * 3));
+            }
+            else {
+                setMaxVelocity(Math.abs(getTurnRemaining()) > 45 ? 0.1 : velocity);
+            }
+            execute();
+        } while (true);
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+        robotLocation.setLocation(getX(), getY());
+        enemyName = e.getName();
+        if (!movieIsRestored) {
+            restoreMovie(enemyName);
+            movieIsRestored = true;
+        }
+        enemyDistance = e.getDistance();
+        double headingDelta = e.getHeadingRadians() - enemyHeading;
+        enemyHeading += headingDelta;
+        enemyBearing = getHeadingRadians() + e.getBearingRadians();
+        enemyLateralVelocity = e.getVelocity() * Math.sin(e.getHeadingRadians() - enemyBearing); 
+        toLocation(enemyBearing, enemyDistance, robotLocation, enemyLocation);
+        double energyDelta = enemyEnergy - e.getEnergy();
+        if (energyDelta >= 0.1 && energyDelta <= 3.0) {
+            enemyBulletPower = energyDelta;
+        }
+        enemyEnergy = e.getEnergy();
+        long timeDelta = getTime() - time;
+        time += timeDelta;
+        record(normalRelativeAngle(headingDelta), e.getVelocity(), timeDelta);
+        if (timeDelta > 1) {
+            //System.out.println("timeDelta: " + timeDelta);
+        }
+        bulletPower = bulletPower(enemyEnergy);
+        bulletVelocity = 20 - 3 * bulletPower;
+        aim();
+        move();
+        timeSinceLastScan = 0;
+    }
+
+    public void onDeath(DeathEvent e) {
+        finishRound();
+    }
+
+    public void onWin(WinEvent e) {
+        finishRound();
+    }
+
+    public void onSkippedTurn(SkippedTurnEvent e) {
+        skippedTurns++;
+    }
+
+    private void doScanner() {
+        double radarOffset = Double.POSITIVE_INFINITY;
+        if(getOthers() == 1 && timeSinceLastScan < 3) {
+            radarOffset = normalRelativeAngle(getRadarHeadingRadians() - enemyBearing);
+            radarOffset += sign(radarOffset) * 0.02;
+        }
+        setTurnRadarLeftRadians(radarOffset);
+        timeSinceLastScan++;
+    }
+
+    private void move() {
+        if (destination == null || Math.abs(getDistanceRemaining()) < 4) {
+            destination = decideDestination();
+        }
+        if (destination != null) {
+            goTo(destination);
+        }
+    }
+
+    private Point2D decideDestination() {
+        Point2D destination = null;
+        if (oldEnemyLocation != null) {
+            destination = new Point2D.Double();
+            double enemyBulletVelocity = 20 - 3 * enemyBulletPower;
+            double maxRelativeAngle = Math.abs(Math.asin(MAX_VELOCITY / enemyBulletVelocity));
+            double newAngle = absoluteBearing(oldEnemyLocation, robotLocation);
+            double oldAngle = absoluteBearing(oldEnemyLocation, oldRobotLocation);
+            double deltaAngle = normalRelativeAngle(newAngle - oldAngle);
+            if (Math.abs(deltaAngle) > maxRelativeAngle) {
+                deltaAngle = 0;
+                accumulatedAngle /= 3;
+            }
+            accumulatedAngle += deltaAngle;
+            double relativeAngle;
+            if (enemyDistance < 250) {
+                relativeAngle = (0.72 + enemyDistance / 2500) * (maxRelativeAngle * 2 * Math.random() - maxRelativeAngle);
+            }
+            else if (enemyDistance < 450) {
+                relativeAngle = (0.695 + enemyDistance / 2200) * (maxRelativeAngle * 2 * Math.random() - maxRelativeAngle);
+            }
+            else  {
+                relativeAngle = (0.71 + enemyDistance / 2000) * (maxRelativeAngle * 2 * Math.random() - maxRelativeAngle);
+            }
+            double absoluteDestinationAngle = Math.abs(accumulatedAngle + relativeAngle);
+            if (absoluteDestinationAngle > maxRelativeAngle) {
+                relativeAngle = sign(relativeAngle) * (maxRelativeAngle - Math.abs(accumulatedAngle));
+            }
+            else if (enemyDistance < 250) {
+                while (absoluteDestinationAngle < maxRelativeAngle / 6) {
+                    //relativeAngle *= 1.3 * sign(deltaAngle) * (Math.random() < 0.5 ? -0.15 : 1);
+                    relativeAngle = 0.72 * maxRelativeAngle * Math.random();
+                    absoluteDestinationAngle = Math.abs(accumulatedAngle + relativeAngle);
+                }
+            }
+            else if (enemyDistance < 450) {
+                if (absoluteDestinationAngle < maxRelativeAngle / 5) {
+                    relativeAngle *= 1.7 * sign(deltaAngle) * (Math.random() < 0.5 ? -0.15 : 1);
+                    //relativeAngle *= -1.0 * sign(deltaAngle);
+                }
+            }
+            double distanceExtra = distanceExtra();
+            distanceExtra *= Math.abs(Math.toDegrees(relativeAngle));
+            toLocation(enemyBearing + Math.PI + relativeAngle, enemyDistance + distanceExtra, enemyLocation, destination);
+            if (!fluffedFieldRectangle.contains(destination)) {
+                toLocation(enemyBearing + Math.PI - relativeAngle, enemyDistance + distanceExtra, enemyLocation, destination);
+            }
+            translateInsideField(destination, WALL_MARGIN);
+            while (!doRam && enemyLocation.distance(destination) <
+                    enemyLocation.distance(robotLocation) - enemyLocation.distance(robotLocation) / 7) {
+                toLocation(absoluteBearing(robotLocation, destination),
+                    robotLocation.distance(destination) / 2, robotLocation, destination);
+            }
+            oldEnemyLocation.setLocation(enemyLocation);
+            oldRobotLocation.setLocation(robotLocation);
+        }
+        else {
+            oldEnemyLocation = new Point2D.Double();
+            oldEnemyLocation.setLocation(enemyLocation);
+            oldRobotLocation = new Point2D.Double();
+            oldRobotLocation.setLocation(robotLocation);
+        }
+        return destination;
+    }
+
+    private double distanceExtra() {
+        double wantedDistance = DEFAULT_DISTANCE;
+        if (isMovementChallenge) {
+            wantedDistance = 680;
+        }
+        double distanceExtra = 3;
+        if (doRam) {
+            distanceExtra = -6;
+        }
+        else if (enemyDistance < 100) {
+            distanceExtra = 12;
+        }
+        else if (isCornered()) {
+            if (enemyDistance > 200) {
+                distanceExtra = -1;
+            }
+            else {
+                distanceExtra = 12;
+            }
+        }
+        else if (enemyDistance > DEFAULT_DISTANCE) {
+            distanceExtra = -1;
+        }
+        return distanceExtra;
+    }
+
+    private boolean isCornered() {
+        return  robotLocation.distance(getBattleFieldWidth() / 2, getBattleFieldHeight() / 2) > 1.2 * (getBattleFieldHeight() / 2);
+    }
+
+    private void goTo(Point2D point) {
+        double distance = robotLocation.distance(point);
+        double angle = normalRelativeAngle(absoluteBearing(robotLocation, point) - getHeadingRadians());
+        if (Math.abs(angle) > Math.PI / 2) {
+            distance *= -1;
+            if (angle > 0) {
+                angle -= Math.PI;
+            }
+            else {
+                angle += Math.PI;
+            }
+        }
+        setTurnRightRadians(angle);
+        setAhead(distance);
+    }
+
+    private double bulletPower(double enemyEnergy) {
+        double power = Math.min(3, 2 + Math.random() * 30);
+        power = Math.min(power, 2400 / enemyDistance);
+        power = Math.min(power, enemyEnergy >= 4 ? 
+            (enemyEnergy + 2) / 6 : enemyEnergy / 4);
+        power = Math.min(power, getEnergy() / 4);
+        return power;
+    }
+
+    private void translateInsideField(Point2D point, double margin) {
+        point.setLocation(Math.max(margin, Math.min(fieldRectangle.getWidth() - margin, point.getX())),
+                          Math.max(margin, Math.min(fieldRectangle.getHeight() - margin, point.getY())));
+    }
+
+    private void aim() {
+        if (enemyBearing != NO_BEARING || getGunHeat() / getGunCoolingRate() < 4) {
+            if (!isMovementChallenge) {
+                guessedEnemyBearing = projectedBearing(similarPeriodEndIndex());
+            }
+            else {
+                guessedEnemyBearing = enemyBearing;
+            }
+        }
+        setTurnGunRightRadians(normalRelativeAngle(guessedEnemyBearing - getGunHeadingRadians()));
+    }
+
+    private int sign(double v) {
+        return v > 0 ? 1 : -1;
+    }
+
+    private void toLocation(double angle, double length, Point2D sourceLocation, Point2D targetLocation) {
+        targetLocation.setLocation(sourceLocation.getX() + Math.sin(angle) * length,
+            sourceLocation.getY() + Math.cos(angle) * length);
+    }
+
+    private double absoluteBearing(Point2D source, Point2D target) {
+        return Math.atan2(target.getX() - source.getX(), target.getY() - source.getY());
+    }
+
+    public double normalAngle(double angle) {
+        while (angle < 0) angle += Math.PI * 2;
+        while (angle > Math.PI * 2) angle -= Math.PI * 2;
+        return angle;
+    } 
+
+    private double normalRelativeAngle(double angle) {
+        return Math.atan2(Math.sin(angle), Math.cos(angle));
+    }
+
+    long maxBulletTravelTime() {
+        return (long)(enemyDistance * 1.3 / bulletVelocity);
+    }
+
+    void record(double eHeadingDelta, double eVelocity, long timeDelta) {
+        eHeadingDelta /= timeDelta;
+        eVelocity /= timeDelta;
+        for (int i = 0; i < timeDelta; i++) {
+            record(new Frame(eHeadingDelta, eVelocity));
+        }
+    }
+
+    void recordBreak(long timeDelta) {
+        Frame breakFrame = new BreakFrame();
+        for (int i = 0; i < timeDelta; i++) {
+            record(breakFrame);
+        }
+    }
+
+    void record(Frame frame) {
+        movie.add(frame);
+        pattern.append((char)(frame.getKey()));
+        if (movieIsFull) {
+            pattern.deleteCharAt(0);
+            movie.remove(0);
+        }
+        else {
+            movieSize++;
+            movieIsFull = movieSize >= PM_LENGTH;
+        }
+    }
+
+    double projectedBearing(long index) {
+        double newX = enemyLocation.getX();
+        double newY = enemyLocation.getY();
+        long travelTime = 0;
+        long bulletTravelTime = 0;
+        if (index > 0) {
+            Frame.setHeading(enemyHeading);
+            for (int i = (int)index; i < movieSize && travelTime <= bulletTravelTime; i++) {
+                Frame frame = (Frame)movie.get(i);
+                newX += frame.deltaX();
+                newY += frame.deltaY();
+                bulletTravelTime = (long)(robotLocation.distance(newX, newY) / bulletVelocity);
+                travelTime++;
+                frame.advanceHeading();
+            }
+        }
+        return absoluteBearing(robotLocation, new Point2D.Double(newX, newY));
+    }
+
+    private long similarPeriodEndIndex() {
+        long index = -1;
+        long matchIndex = -1;
+        long matchLength = 0;
+        long maxTryLength = Math.min(getTime(), 600);
+        searches++;
+        if (maxTryLength > 1 && movieSize > maxTryLength + 1 + maxBulletTravelTime()) {
+            long patternLength = movieSize - maxBulletTravelTime();
+            String patternString = pattern.substring(0, (int)patternLength);
+            String searchString  = pattern.substring((int)(movieSize - maxTryLength));
+            long tryLength = maxTryLength;
+            long upper = maxTryLength;
+            do {
+                boolean foundMatch = false;
+                if (time > 150) {
+                    index = patternString.lastIndexOf(searchString.substring((int)(maxTryLength - tryLength)));
+                }
+                else {
+                    index = patternString.indexOf(searchString.substring((int)(maxTryLength - tryLength)));
+                }
+                if (index >= 0) {
+                    long endIndex = index + tryLength;
+                    if (patternLength > endIndex + maxBulletTravelTime() + 1 && 
+                            patternString.substring((int)endIndex,
+                                (int)(endIndex + maxBulletTravelTime() + 1)).indexOf(BREAK_KEY) < 0) {
+                        foundMatch = true;
+                        matchIndex = index;
+                        matchLength = tryLength;
+                        if (tryLength == maxTryLength) {
+                            break;
+                        }
+                        tryLength += (upper - tryLength) / 2;
+                    }
+                }
+                if (!foundMatch) {
+                    upper = tryLength;
+                    tryLength -= (tryLength - matchLength) / 2;
+                }
+            }
+            while (tryLength > 1 && tryLength < upper - 1);
+        }
+        updateStats(matchLength);
+        if (matchIndex >= 0) {
+            return matchIndex + matchLength;
+        }
+        return matchIndex;
+    }
+
+    private void saveMovie(String enemyName) {
+        if (!isMovementChallenge) {
+            try {
+                ZipOutputStream zipout = new ZipOutputStream(new RobocodeFileOutputStream(getDataFile(enemyName + ".zip")));
+                zipout.putNextEntry(new ZipEntry(enemyName));
+                PrintWriter out = new PrintWriter(new OutputStreamWriter(zipout)); 
+                for (int i = 0; i < Math.min(movieSize, PM_LENGTH / 7); i++) {
+                    Frame frame = (Frame)movie.get(i);
+                    out.println(frame.headingDelta);
+                    out.println(frame.velocity);
+                }
+                out.flush();
+                out.close();
+            }
+            catch (Exception e) {
+                System.out.println("Error saving movie: " + e);
+            }
+        }
+    }
+
+    private void restoreMovie(String enemyName) {
+        try {
+            ZipInputStream zipin = new ZipInputStream(new FileInputStream(getDataFile(enemyName + ".zip")));
+            zipin.getNextEntry();
+            BufferedReader in = new BufferedReader(new InputStreamReader(zipin));
+            String line;
+            do {
+                line = in.readLine();
+                if (line != null) {
+                    double headingDelta = Double.parseDouble(line);
+                    line = in.readLine();
+                    double velocity = Double.parseDouble(line);
+                    record(headingDelta, velocity, 1);
+                }
+            } while (line != null);
+            in.close();
+        }
+        catch (Exception e) {
+            System.out.println("Error restoring movie: " + e);
+        }
+    }
+
+    private void updateStats(long matchLength) {
+        if (matchLength > maxMatchLength) {
+            maxMatchLength = matchLength;
+        }
+        accumulatedMatchLength += matchLength;
+    }
+
+    private void finishRound() {
+        if (getRoundNum() == getNumRounds() -1 && !movieIsSaved) {
+            movieIsSaved = true;
+            saveMovie(enemyName);
+        }
+        /*
+        System.out.println("maxMatchLength: " + maxMatchLength);
+        System.out.println("average: " + accumulatedMatchLength / searches);
+        System.out.println("Total skipped turns: " + skippedTurns);
+        */
+    }
+}
+
+class Frame {
+    static double heading;
+    double headingDelta;
+    double velocity;
+
+    Frame() {
+    }
+
+    Frame(double headingDelta, double velocity) {
+        this.headingDelta = headingDelta;
+        this.velocity = velocity;
+    }
+
+    static void setHeading(double newHeading) {
+        heading = newHeading;
+    }
+
+    void advanceHeading() {
+        heading += headingDelta;
+    }
+
+    char getKey() {
+        int key = 3;
+        key = key + 11 * (int)((10.0 + Math.toDegrees(headingDelta)));
+        key = key + (int)((Frankie.MAX_VELOCITY + velocity));
+        return (char)(key);
+    }
+
+    double deltaX() {
+        return Math.sin(heading) * velocity;
+    }
+
+    double deltaY() {
+        return Math.cos(heading) * velocity;
+    }
+}
+
+class BreakFrame extends Frame {
+    char getKey() {
+        return Frankie.BREAK_KEY;
+    }
+
+    double deltaX() {
+        return 0;
+    }
+
+    double deltaY() {
+        return 0;
+    }
+}

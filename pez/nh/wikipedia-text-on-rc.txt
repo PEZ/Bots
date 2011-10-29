@@ -1,0 +1,75 @@
+[[Image:Robocode-logo.png|thumb|right|300px|[[Splash screen]]]]
+'''Robocode''' is an [[Open Source]] [[educational game]] by [[Mathew Nelson]] (originally R was provided by [[International Business Machines|IBM]]). It is designed to help people learn to program in [[Java programming language|Java]] and enjoy the experience. It is very easy to start - a simple robot can be written in just a few minutes - but perfecting a bot can take months or more.
+
+== The game ==
+Competitors write [[software]] that controls a miniature [[tank]] that fights other identically-built (but differently programmed) tanks on a playing field.  Robots move, shoot at each other, scan for each other, and hit the walls (or other robots) if they aren't careful. Though the idea of this "game" may seem simple, the actual strategy needed to win is not. Good robots have hundreds of lines in their code dedicated to strategy. Some of the more successful robots use techniques such as [[statistical analysis]] and attempts at [[neural network]]s in their designs.
+
+== Sample bots ==
+Several sample robots are included in Robocode to help the beginners get started.  They demonstrate various basic techniques used in coding robots, from [[event-driven programming]] to writing out data to be used later. 
+
+== Safely run other people bots.
+One can test a robot against many other competitors by downloading their [[bytecode]], so design competition is fierce. Robocode provides a [[security sandbox]] (bots are restricted in what they can do on the machine they run on) which makes this safe to do.
+
+== Movement and Targeting ==
+Robocode competition is all about two things:
+# Avoid getting hit too much ([http://robowiki.net/?Movement Movement])
+# Try predict where the opponent(s) will move and hit them as much as possible ([http://robowiki.net/?Targeting Targeting])
+Many sophisticated techniques have emerged, but today (writing February 2006) all top bots use:
+* [http://robowiki.net/?WaveSurfing WaveSurfing] - Adapting your movement and try avoid getting hit the same way twice.
+* [http://robowiki.net/?StatisticalTargeting StatisticalTargeting] - Collect data that describes the targeting situation together with what would have been the correct descision for each situation. Use this data to make targeting descisions.
+
+== Code size restraints ==
+To force the competitors to prioritize what features to include in a bot there are four used code size categories. (Codesize is measured in bytes by a tool.):
+# Megabots - no codesize restriction
+# Minibots - less than 1500 bytes
+# Microbots - less than 750 bytes
+# Nanobots - less than 250 bytes
+
+== Leagues ==
+There exist (and have existed) several leagues for Robocode.
+
+=== RoboRumble@Home ===
+The main active competition is the [http://robowiki.net?RoboRumble RoboRumble@Home], a continuous league based on distributed computation in a similar way to SETI@Home. The RR@H features leagues for 1-on-1, melee (free for all with more than two bots) and teams. 1-on-1 and melee competitions are carried out for the four main code size categories.
+
+The RR@H uses an [[ELO]] like rating system. But since all bots get to meet all other bots this is mainly a measure on how well you perform against all others. There is also a ranking where only winning or losing counts. Don't lose against any other bot and you're the sure champion here.
+
+==== Current rankings ====
+Check the current rankings here:
+* http://robowiki.net/?RoboRumble/CurrentRankings
+
+=== Robocode Little League ===
+While not currently active, the [http://robocode.yajags.com/ Robocode Little League] (a weekly competition specifically for codesize-constrained bots) still provides tables on the past tournaments run.
+
+== Some robots worth mentioning ==
+The current (February 2006) champions of the RR@H are:
+{|
+|-
+! Codesize !! Battle type !! Bot !! Comment
+|-
+| ''Megabots'' || 1-on-1  || [http://robowiki.net/?Ascendant Ascendant] || Champion for soon to be two years
+|-
+|              || melee   || [http://robowiki.net/?Aleph Aleph] || 
+|-
+|              || overall || [http://robowiki.net/?Shadow Shadow] || Among the runner-ups in both 1-on-1 and melee and undefeated in 1-on-1 at that.
+| ''Minibots'' || 1-on-1  || [http://robowiki.net/?Pugilist Pugilist] || Unthreatened champion for over a year also undefeated by other minibots. And it is with [[open source]].
+|-
+|              || melee   || [http://robowiki.net/?GlowBlowMelee GlowBlowMelee] || 
+|-
+|              || overall || [http://robowiki.net/?Shadow Shadow] || Among the runner-ups in both 1-on-1 and melee and undefeated in 1-on-1 at that.
+
+== A Robocode Wiki ==
+The main site for Robocode knowledge and discussions is the [http://robowiki.net RoboWiki]. Here you can read about techniques and strategies, browse info on many, many bots, find source code (both code snippets and complete competetive bots), ask for help and more. The Robowiki also hosts the RoboRumble@Home.
+
+Beginners on Robocode might want to start with [http://robowiki.net/?BeginnersFAQ The Robocode Beginners FAQ]
+
+== External links ==
+*Robocode can be downloaded from SourceForge: http://robocode.sourceforge.net/
+** (Old location was: http://robocode.alphaworks.ibm.com/)
+*Irish Robocode Competition : [http://www.robocode.ie http://www.robocode.ie]
+
+[[Category:Educational computer games]]
+[[Category:Programming games]]
+
+[[fr:Robocode]]
+[[ja:Robocode]]
+

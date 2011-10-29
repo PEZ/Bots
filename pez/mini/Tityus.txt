@@ -1,0 +1,306 @@
+package pez.mini;
+import robocode.*;
+import robocode.util.Utils;
+import java.awt.geom.*;
+import java.awt.Color;
+import java.util.*;
+import java.util.zip.*;
+import java.io.*;
+
+// This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
+// http://robowiki.net/?RWPCL
+//
+// Tityus, by PEZ. Venomous, small and glows in black light.
+// $Id: Tityus.java,v 1.22 2004/01/12 12:54:46 peter Exp $
+
+public class Tityus extends AdvancedRobot {
+    static final double BOT_WIDTH = 36;
+    static final double MAX_VELOCITY = 8;
+
+    static final double WALL_MARGIN = 25;
+    static final double MAX_DISTANCE = 800;
+    static final int DISTANCE_INDEXES = 5;
+    static final int ACCEL_INDEXES = 3;
+    static final int WALL_INDEXES = 2;
+    static final int AIM_FACTORS = 27;
+    static Point2D robotLocation;
+    static Point2D enemyLocation;
+    static double enemyDistance;
+    static double enemyEnergy;
+    static double enemyAbsoluteBearing;
+    static double lastEnemyAbsoluteBearing;
+    static double enemyBulletTravelTime = 30;
+    static double deltaBearing;
+    long timeSinceVelocityChanged;
+    static double lastDeltaBearing;
+    static int[][][][] aimFactors =
+	new int[ACCEL_INDEXES][WALL_INDEXES][DISTANCE_INDEXES][AIM_FACTORS];
+    static String enemyName = "";
+    int[] currentAimFactors;
+    double direction = 0.15;
+    static boolean isFlattening;
+    int fullLeadHits;
+    long timeSinceReverse;
+
+    public void run() {
+        setColors(Color.YELLOW, Color.YELLOW, Color.YELLOW);
+        setAdjustGunForRobotTurn(true);
+        setAdjustRadarForGunTurn(true);
+
+        do {
+            turnRadarRightRadians(Double.POSITIVE_INFINITY); 
+        } while (true);
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+        if (enemyName == "") {
+            enemyName = e.getName();
+            restoreFactors();
+        }
+        Point2D lastRobotLocation = robotLocation;
+        robotLocation = new Point2D.Double(getX(), getY());
+	lastEnemyAbsoluteBearing = enemyAbsoluteBearing;
+        enemyAbsoluteBearing = getHeadingRadians() + e.getBearingRadians();
+        enemyDistance = e.getDistance();
+        enemyLocation = vectorToLocation(enemyAbsoluteBearing, enemyDistance, robotLocation);
+
+	boolean enemyJustFired = false;
+        double enemyEnergyLost = enemyEnergy - e.getEnergy();
+        enemyEnergy = e.getEnergy();
+        if (enemyEnergyLost >= 0.1 && enemyEnergyLost <= 3.0) {
+	    enemyJustFired = true;
+            enemyBulletTravelTime = enemyDistance / bulletVelocity(enemyEnergyLost) - 1;
+        }
+
+	move(enemyJustFired, enemyEnergyLost);
+
+	shoot(lastRobotLocation);
+
+        setTurnRadarRightRadians(Utils.normalRelativeAngle(enemyAbsoluteBearing - getRadarHeadingRadians()) * 2);
+    }
+
+    public void onWin(WinEvent e) {
+        saveFactors();
+    }
+
+    public void onDeath(DeathEvent e) {
+        saveFactors();
+    }
+
+    public void onCustomEvent(CustomEvent e) {
+	Wave wave = (Wave)(e.getCondition());
+	wave.wAimFactors[(int)Math.min(wave.wAimFactors.length - 1, Math.max(0, Math.round(((((
+	    wave.wBearingDirection * Utils.normalRelativeAngle(absoluteBearing(wave.wGunLocation, enemyLocation) - wave.wBearing)) /
+	    maxEscapeAngle(wave.wBulletPower)) + 1) / 2) * wave.wAimFactors.length)))]++;
+    }
+
+    static final int MAX_FULL_LEAD_HITS = 1;
+    public void onHitByBullet(HitByBulletEvent e) {
+	if (!isFlattening && enemyDistance > 200) {
+	    // Adapted from Axe's Musashi: http://robowiki.net/?Musashi
+	    if (timeSinceReverse > enemyDistance / e.getVelocity()) {
+		isFlattening = ++fullLeadHits >= MAX_FULL_LEAD_HITS;
+	    }
+	}
+    }
+
+    /*
+    static final double FLATTENER_FACTOR = 2.2;
+    void move(boolean enemyJustFired, double enemyFirePower) {
+	timeSinceReverse++;
+	Point2D robotDestination = null;
+	if (enemyJustFired) {
+	    double enemyBulletsInTheAir = enemyBulletTravelTime / ((1.0 + enemyFirePower / 5.0) / getGunCoolingRate());
+	    if (isFlattening && Math.random() < 0.25 / enemyBulletsInTheAir) {
+		direction *= -1;
+	    }
+	}
+	else if (isFlattening && (Math.random() < FLATTENER_FACTOR / enemyBulletTravelTime)) {
+	    direction *= -1;
+	}
+	double wallingLevel = enemyDistance / 15;
+	for (int i = 0; i < 2; i++) {
+	    double tries = 0;
+	    do {
+		robotDestination = vectorToLocation(absoluteBearing(enemyLocation, robotLocation) + direction,
+			enemyDistance * ((enemyDistance < 400 ? 1.01 : 0.99) - tries / 100.0), enemyLocation);
+		tries++;
+	    } while (!fieldRectangle(WALL_MARGIN).contains(robotDestination));
+	    if (tries < wallingLevel + i * 100) {
+		break;
+	    }
+	    direction *= -1;
+	    timeSinceReverse = 0;
+	}
+	goTo(robotDestination);
+    }
+    */
+
+    static final double FLATTENER_FACTOR = 2.4;
+    void move(boolean enemyJustFired, double enemyFirePower) {
+	timeSinceReverse++;
+	Point2D robotDestination = null;
+	double wallingLevel = enemyDistance / 10;
+	if (isFlattening && (Math.random() < FLATTENER_FACTOR / enemyBulletTravelTime)) {
+	    direction *= -1;
+	}
+	for (int i = 0; i < 2; i++) {
+	    double tries = 0;
+	    do {
+		robotDestination = vectorToLocation(absoluteBearing(enemyLocation, robotLocation) + direction,
+			enemyDistance * ((enemyDistance < 400 ? 1.01 : 0.99) - tries / 100.0), enemyLocation);
+		tries++;
+	    } while (!fieldRectangle(WALL_MARGIN).contains(robotDestination));
+	    if (tries < wallingLevel + i * 100) {
+		break;
+	    }
+	    direction *= -1;
+	    timeSinceReverse = 0;
+	}
+	goTo(robotDestination);
+    }
+
+    void shoot(Point2D lastRobotLocation) {
+        double bulletPower = Math.min(getEnergy() / 5, Math.min(enemyEnergy / 4, bulletPower(distanceIndex())));
+
+	if (getTime() > 16) {
+	    lastDeltaBearing = deltaBearing;
+	    deltaBearing = Utils.normalRelativeAngle(absoluteBearing(lastRobotLocation, enemyLocation) - lastEnemyAbsoluteBearing);
+	    if (Math.abs(deltaBearing) < 0.00001) {
+		deltaBearing = lastDeltaBearing;
+	    }
+	    currentAimFactors = aimFactors[accelIndex()][wallIndex()][distanceIndex()];
+
+	    setTurnGunRightRadians(Utils.normalRelativeAngle(
+			enemyAbsoluteBearing + maxEscapeAngle(bulletPower) *
+			sign(deltaBearing) * (enemyEnergy > 0 ? mostVisitedFactor() : 0) - getGunHeadingRadians()));
+
+	    if (getEnergy() > 0.3 || enemyDistance < 150 || enemyEnergy == 0) {
+		setFire(bulletPower);
+		if (bulletPower >= 1.0) {
+		    Wave wave = new Wave();
+		    wave.wTime = getTime();
+		    wave.wBulletPower = bulletPower;
+		    wave.wGunLocation = robotLocation;
+		    wave.wAimFactors = currentAimFactors;
+		    wave.wBearing = enemyAbsoluteBearing;
+		    wave.wBearingDirection = sign(deltaBearing);
+		    addCustomEvent(wave);
+		}
+	    }
+	}
+    }
+
+    double bulletPower(int distanceIndex) {
+	return 3.0 - 1.25 * ((double)distanceIndex / (double)DISTANCE_INDEXES);
+    }
+
+    RoundRectangle2D fieldRectangle(double margin) {
+        return new RoundRectangle2D.Double(margin, margin,
+	    getBattleFieldWidth() - margin * 2, getBattleFieldHeight() - margin * 2, 75, 75);
+    }
+
+    void goTo(Point2D destination) {
+        double angle = Utils.normalRelativeAngle(absoluteBearing(robotLocation, destination) - getHeadingRadians());
+	double turnAngle = Math.atan(Math.tan(angle));
+        setTurnRightRadians(turnAngle);
+        setAhead(robotLocation.distance(destination) * (angle == turnAngle ? 1 : -1));
+	setMaxVelocity(Math.abs(getTurnRemaining()) > 30 ? 0 : MAX_VELOCITY);
+    }
+
+    double mostVisitedFactor() {
+        int mostVisited = (AIM_FACTORS - 1) / 2;
+        for (int i = 0; i < AIM_FACTORS; i++) {
+            if (currentAimFactors[i] > currentAimFactors[mostVisited]) {
+                mostVisited = i;
+            }
+        }
+	return ((mostVisited + 0.5) / AIM_FACTORS) * 2 - 1;
+    }
+
+    int distanceIndex() {
+        return Math.min((int)(enemyDistance / (MAX_DISTANCE / DISTANCE_INDEXES)), DISTANCE_INDEXES - 1);
+    }
+
+    int accelIndex() {
+        int delta = (int)(20 * (Math.abs(deltaBearing) - Math.abs(lastDeltaBearing)) / (MAX_VELOCITY / enemyDistance));
+        if (delta < 0) {
+            return 0;
+        }
+        else if (delta > 0) {
+            return 2;
+        }
+        return 1;
+    }
+
+    int wallIndex() {
+	if (!(fieldRectangle(18)).contains(vectorToLocation(enemyAbsoluteBearing + deltaBearing * 7,
+		enemyDistance, robotLocation))) {
+	    return 1;
+	}
+	return 0;
+    }
+
+    static double maxEscapeAngle(double bulletPower) {
+	return Math.asin(MAX_VELOCITY / bulletVelocity(bulletPower));
+    }
+
+    static double bulletVelocity(double power) {
+        return 20 - 3 * power;
+    }
+
+    static Point2D vectorToLocation(double angle, double length, Point2D sourceLocation) {
+        return new Point2D.Double(sourceLocation.getX() + Math.sin(angle) * length,
+            sourceLocation.getY() + Math.cos(angle) * length);
+    }
+
+    static double absoluteBearing(Point2D source, Point2D target) {
+        return Math.atan2(target.getX() - source.getX(), target.getY() - source.getY());
+    }
+
+    private static int sign(double v) {
+        return v > 0 ? 1 : -1;
+    }
+
+    void restoreFactors() {
+        try {
+            ZipInputStream zipin = new ZipInputStream(new
+                FileInputStream(getDataFile(enemyName)));
+            zipin.getNextEntry();
+            aimFactors = (int[][][][])(new ObjectInputStream(zipin)).readObject();
+        }
+        catch (Exception e) {
+        }
+    }
+
+    void saveFactors() {
+        try {
+            ZipOutputStream zipout = new ZipOutputStream(new RobocodeFileOutputStream(getDataFile(enemyName)));
+            zipout.putNextEntry(new ZipEntry("aimFactors"));
+            ObjectOutputStream out = new ObjectOutputStream(zipout);
+            out.writeObject(aimFactors);
+            out.flush();
+            zipout.closeEntry();
+            out.close();
+        }
+        catch (IOException e) {
+        }
+    }
+
+    class Wave extends Condition {
+	long wTime;
+	double wBulletPower;
+	Point2D wGunLocation;
+	double wBearing;
+	double wBearingDirection;
+	int[] wAimFactors;
+
+	public boolean test() {
+	    if (bulletVelocity(wBulletPower) * (getTime() - wTime) > wGunLocation.distance(enemyLocation)) {
+		removeCustomEvent(this);
+		return true;
+	    }
+	    return false;
+	}
+    }
+}

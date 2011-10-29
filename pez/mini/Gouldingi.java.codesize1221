@@ -1,0 +1,189 @@
+package pez.mini;
+import robocode.*;
+import java.awt.geom.*;
+import java.awt.Color;
+import java.util.*;
+
+// Gouldingi, by PEZ. Small, hard to catch and sharp teeth.
+// $Id: Gouldingi.java.codesize1221,v 1.1 2003/04/04 22:22:36 peter Exp $
+
+public class Gouldingi extends AdvancedRobot {
+    private static Point2D location = new Point2D.Double();
+    private static Point2D oldLocation = new Point2D.Double();
+    private static Point2D enemyLocation = new Point2D.Double();
+    private static Point2D oldEnemyLocation = new Point2D.Double();
+    private static Random random = new Random();
+    private static Rectangle2D fieldRectangle;
+    private static double enemyDistance;
+    private static double enemyEnergy;
+    private static double absoluteBearing;
+    private static double deltaBearing;
+    private static double meanAimFactorLeft;
+    private static double meanAimFactorRight;
+
+    public void run() {
+        fieldRectangle = new Rectangle2D.Double(0, 0 , getBattleFieldWidth(), getBattleFieldHeight());
+        setColors(Color.yellow, Color.gray, Color.black);
+        setAdjustGunForRobotTurn(true);
+        setAdjustRadarForGunTurn(true);
+        addCustomEvent(new GunAimedCondition());
+        setTurnRadarLeft(720);
+
+        while (true) {
+            setMaxVelocity(Math.abs(getTurnRemaining()) > 45 ? 0.1 : 8.0);
+            moveRandomly();
+            execute();
+        }
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+        oldLocation.setLocation(location);
+        location.setLocation(getX(), getY());
+        oldEnemyLocation.setLocation(enemyLocation);
+        absoluteBearing = getHeading() + e.getBearing();
+        enemyEnergy = e.getEnergy();
+        enemyDistance = e.getDistance();
+        toLocation(absoluteBearing, enemyDistance, location, enemyLocation);
+        double delta = normalRelativeAngle(absoluteBearing(oldLocation, enemyLocation) -
+                absoluteBearing(oldLocation, oldEnemyLocation));
+        if (Math.abs(delta) > 0.001) {
+            deltaBearing = delta;
+        }
+        setTurnRadarRightRadians(Math.sin(Math.toRadians(absoluteBearing - getRadarHeading()))*1.5);
+        aimGun();
+        if (enemyEnergy == 0 && getOthers() == 1) {
+            goTo(enemyLocation);
+        }
+    }
+
+    public void onCustomEvent(CustomEvent e) {
+        if (e.getCondition() instanceof GunAimedCondition) {
+            if (enemyEnergy > 0) {
+                Bullet bullet = setFireBullet(bulletPower());
+                if (bullet != null) {
+                    addCustomEvent(new CheckUpdateFactors(bullet));
+                }
+            }
+        }
+    }
+
+    private void moveRandomly() {
+        if (getDistanceRemaining() == 0) {
+            Point2D dLocation = new Point2D.Double();
+            double relativeAngle = -45 + Math.random() * 90;
+            double angle = absoluteBearing + 180 + relativeAngle;
+            double distanceExtra = Math.abs(relativeAngle) * (enemyDistance < 450 ? 2 : -2);
+            toLocation(angle, enemyDistance + distanceExtra, enemyLocation, dLocation);
+            translateInsideField(dLocation, 35);
+            goTo(dLocation);
+        }
+    }
+
+    private double bulletPower() {
+        double power = Math.min(3, Math.random() * 24);
+        power = Math.min(enemyEnergy / 3, power);
+        power = Math.min(getEnergy() / 2, power);
+        return power;
+    }
+
+    private void aimGun() {
+        double guessedDistance = location.distance(enemyLocation);
+        double meanAimFactor = meanAimFactorRight;
+        if (deltaBearing < 0) {
+            meanAimFactor = meanAimFactorLeft;
+        }
+        double guessedHeading = absoluteBearing(location, enemyLocation) + deltaBearing * meanAimFactor;
+        Point2D impactLocation = new Point2D.Double();
+        toLocation(guessedHeading, guessedDistance, location, impactLocation);
+        translateInsideField(impactLocation, 1);
+        guessedHeading = absoluteBearing(location, impactLocation) + random.nextGaussian();
+        setTurnGunRight(normalRelativeAngle(guessedHeading - getGunHeading()));
+    }
+
+    private void goTo(Point2D point) {
+        double distance = location.distance(point);
+        double angle = normalRelativeAngle(absoluteBearing(location, point) - getHeading());
+        if (Math.abs(angle) > 90) {
+            distance *= -1;
+            if (angle > 0) {
+                angle -= 180;
+            }
+            else {
+                angle += 180;
+            }
+        }
+        setTurnRight(angle);
+        setAhead(distance);
+    }
+
+    private void translateInsideField(Point2D point, double margin) {
+        point.setLocation(Math.max(margin, Math.min(fieldRectangle.getWidth() - margin, point.getX())),
+                          Math.max(margin, Math.min(fieldRectangle.getHeight() - margin, point.getY())));
+    }
+
+    private void toLocation(double angle, double length, Point2D sourceLocation, Point2D targetLocation) {
+        targetLocation.setLocation(sourceLocation.getX() + Math.sin(Math.toRadians(angle)) * length,
+                                   sourceLocation.getY() + Math.cos(Math.toRadians(angle)) * length);
+    }
+
+    private double absoluteBearing(Point2D source, Point2D target) {
+        return Math.toDegrees(Math.atan2(target.getX() - source.getX(), target.getY() - source.getY()));
+    }
+
+    private double normalRelativeAngle(double angle) {
+        double relativeAngle = angle % 360;
+        if (relativeAngle <= -180 )
+            return 180 + (relativeAngle % 180);
+        else if ( relativeAngle > 180 )
+            return -180 + (relativeAngle % 180);
+        else
+            return relativeAngle;
+    }
+
+    public double rollingAvg(double value, double newEntry, double n, double weighting ) {
+        return (value * n + newEntry * weighting)/(n + weighting);
+    } 
+
+    class CheckUpdateFactors extends Condition {
+        private long time;
+        private double bulletVelocity;
+        private double bulletPower;
+        private double bearingDelta;
+        private Point2D oldRLocation = new Point2D.Double();
+        private Point2D oldELocation = new Point2D.Double();
+        private double oldBearing;
+
+        public CheckUpdateFactors(Bullet bullet) {
+            this.time = getTime();
+            this.bulletVelocity = bullet.getVelocity();
+            this.bulletPower = bullet.getPower();
+            this.bearingDelta = deltaBearing + 0.0001;
+            this.oldRLocation.setLocation(location);
+            this.oldELocation.setLocation(enemyLocation);
+            this.oldBearing = absoluteBearing(oldRLocation, oldELocation);
+        }
+
+        public boolean test() {
+            double bulletDistance = bulletVelocity * (getTime() - time);
+            if (bulletDistance > location.distance(enemyLocation) - 15) {
+                double impactBearing = absoluteBearing(oldRLocation, enemyLocation);
+                double factor = normalRelativeAngle(impactBearing - oldBearing) / bearingDelta;
+                if (bearingDelta < 0) {
+                    meanAimFactorLeft = rollingAvg(meanAimFactorLeft, factor, 80, bulletPower);
+                }
+                else {
+                    meanAimFactorRight = rollingAvg(meanAimFactorRight, factor, 80, bulletPower);
+                }
+                removeCustomEvent(this);
+            }
+            return false;
+        }
+    }
+
+    class GunAimedCondition extends Condition {
+        public boolean test() {
+            return (getOthers() > 0 && getGunHeat() == 0 && getGunTurnRemaining() == 0 &&
+                (getEnergy() > 0.5 || enemyDistance < 350));
+        }
+    }
+}

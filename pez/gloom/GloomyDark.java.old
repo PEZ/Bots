@@ -1,0 +1,160 @@
+package pez.gloom;
+import pez.gloom.movement.*;
+import pez.gloom.intel.*;
+import robocode.*;
+import robocode.util.Utils;
+import java.awt.Color;
+import java.awt.geom.*;
+
+// This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
+// http://robowiki.dyndns.org/?RWPCL
+//
+// $Id: GloomyDark.java,v 1.5 2003/12/06 23:27:41 peter Exp $
+
+public class GloomyDark extends Bot {
+    private static final double EVASION_DISTANCE = 200;
+    static final int MAX_AIM_FACTOR_VISITS = 75;
+    static final double DEFAULT_BULLET_POWER = 2.5;
+    static final int AIM_MOVETIME_SEGMENTS = 7;
+    static final int AIM_DISTANCE_SEGMENTS = 5;
+    static final int AIM_VELOCITY_SEGMENTS = 3;
+    static final int AIM_POWER_SEGMENTS = 5;
+    static final int MOVE_DISTANCE_SEGMENTS = 5;
+    static final int MOVE_POWER_SEGMENTS = 5;
+    static final int MOVE_FACTORS = 41;
+    private Movement movement;
+    private Movement[] movements = new Movement[2];
+    private static int movementSwitches = 1;
+
+    private boolean isTC = false;
+
+    void init() {
+        setColors(Color.gray.darker().darker(), Color.blue.darker().darker(), Color.yellow.darker().darker());
+        movements[0] = new MMMF(this);
+        movements[1] = new TMTF(this);
+	if (getRoundNum() % 5 == 0) {
+	    movementSwitches++;
+	}
+	movement = movements[movementSwitches % 2];
+    }
+
+    void move() {
+	if (!isTC) {
+	    movement.doMove();
+	}
+    }
+
+    void gun() {
+        setTurnGunRightRadians(Utils.normalRelativeAngle(enemyAbsoluteBearing +
+	    enemyMaxBearing * enemyBearingDirection * aimFactor(currentAimFactorVisits) - getGunHeadingRadians()));
+	double bulletPower = bulletPower();
+        if (shouldFire()) {
+	    if (setFireBullet(bulletPower) != null || true) { //getRoundNum() < 10) {
+		addCustomEvent(new RobotWave(this, bulletPower, robotLocation, enemyLocation,
+			    enemyDeltaBearing, enemyMaxBearing, enemyBearingDirection, currentAimFactorVisits));
+	    }
+        }
+    }
+
+    public boolean shouldFire() {
+	if (isTC) {
+	    return robotEnergy > 0;
+	}
+        boolean result = false;
+        if (shouldRam()) {
+            return false;
+        }
+        else if (enemyDistance <= 200) {
+            result = true;
+        }
+	else if (enemyEnergy > robotEnergy * 9) {
+	    result = false;
+	}
+        else if (robotEnergy > 0.2) {
+            result = true;
+        }
+        return result;
+    }
+
+    public boolean shouldRam() {
+        boolean result = false;
+        if (timeSinceEnemyFired > 50 && getOthers() == 1) {
+            if (enemyEnergy <= 0.5 && robotEnergy > enemyEnergy * 8 || enemyEnergy == 0.0) {
+                result = true;
+            }
+        }
+        return result;
+    }
+
+    public boolean shouldEvade() {
+        return enemyDistance < EVASION_DISTANCE && !shouldRam();
+    }
+
+    public double getFightingDistance(double defaultDistance) {
+	if (robotEnergy > enemyEnergy * 5) {
+	    return Math.max(600, defaultDistance);
+	}
+	if (enemyEnergy > robotEnergy * 3) {
+	    return Math.max(600, defaultDistance);
+	}
+	return defaultDistance;
+    }
+
+    public double getDefaultBulletPower() {
+	if (isTC) {
+	    return 3.0;
+	}
+        return DEFAULT_BULLET_POWER;
+    }
+
+    public double bulletPower() {
+	if (isTC) {
+	    return Math.min(3.0, getEnergy());
+	}
+        double power = DEFAULT_BULLET_POWER;
+        if (enemyDistance < 200) {
+            power = 3.0;
+        }
+        else {
+	    power = DEFAULT_BULLET_POWER - DEFAULT_BULLET_POWER * ((enemyDistance - movement.getDefaultDistance()) / 600);
+	    if (Math.random() < 0.5) {
+		power *= 0.5;
+	    }
+	    power = Math.min(power, robotEnergy / 4D);
+	}
+        power = Math.min(enemyEnergy / 4D, power);
+        return power;
+    }
+
+    public int getMaxAimFactorVisits() {
+        return MAX_AIM_FACTOR_VISITS;
+    }
+
+    public int getAimDistanceSegments() {
+        return AIM_DISTANCE_SEGMENTS;
+    }
+
+    public int getAimVelocitySegments() {
+        return AIM_VELOCITY_SEGMENTS;
+    }
+
+    public int getAimMoveTimeSegments() {
+        return AIM_MOVETIME_SEGMENTS;
+    }
+
+    public int getAimPowerSegments() {
+        return AIM_POWER_SEGMENTS;
+    }
+
+    public int getMoveDistanceSegments() {
+        return MOVE_DISTANCE_SEGMENTS;
+    }
+
+    public int getMovePowerSegments() {
+        return MOVE_POWER_SEGMENTS;
+    }
+
+    public int getMoveFactors() {
+        return MOVE_FACTORS;
+    }
+}

@@ -1,0 +1,509 @@
+package pez;
+import pez.Rutils;
+import robocode.*;
+import java.awt.geom.*;
+import java.awt.Color;
+import java.util.Iterator;
+
+// Marshmallow the Robot, by PEZ. It's good toasted too!
+// $Id: Marshmallow.java,v 1.71 2003/02/28 00:15:53 peter Exp $
+
+//Todo: Consider making TuningFactor of random non-dodging movement.
+//      Make tuning factor of timing of when to dodge.
+public class Marshmallow extends AdvancedRobot implements MarshmallowConstants {
+    private Point2D location = new Point2D.Double();
+    private Rectangle2D fieldRectangle;
+    private static int bulletsFired = 0;
+    private static int bulletsHit = 0;
+    private static int bulletsFiredAtMe = 0;
+    private static int bulletsHitMe = 0;
+    private static int bulletsFired_400_800 = 0;
+    private static int bulletsHit_400_800 = 0;
+    private static int bulletsOnTarget = 0;
+    private static int skippedTurns = 0;
+    private static int totalTurns = 0;
+    private Enemy weakestEnemy = null;
+    private Enemy strongestEnemy = null;
+    private Enemy closestEnemy = null;
+    private Enemy farthestEnemy = null;
+    private Enemy currentEnemy = null;
+    private static Enemies school = null;
+    private Driver driver = null;
+    private boolean isAiming = false;
+    private boolean hasFired = false;
+    private boolean schoolHasFired = false;
+    private long time;
+    private boolean isMelee;
+    private boolean isOneOnOne;
+    private boolean haveEnemy;
+    private int oscillationDirection;
+    private int radarDirection;
+    private RadarTurnCompleteCondition radarTurnCompleteCondition;
+    private boolean calculateDeltas;
+    private static double sectorAimWidth = (MC_SECTOR_AIM_MAX - MC_SECTOR_AIM_MIN) / MC_SECTOR_AIMS;
+    private static TuningFactor virtualDodgeFactor = new TuningFactor(MC_SECTOR_AIM_MIN, MC_SECTOR_AIM_MAX, sectorAimWidth);
+    private static TuningFactor realDodgeFactor = new TuningFactor(MC_SECTOR_AIM_MIN, MC_SECTOR_AIM_MAX, sectorAimWidth);
+
+    public void run() {
+        initRound();
+        initTurn();
+        execute();
+
+        while (true) {
+            initTurn();
+            handleSchool();
+            currentEnemy = chooseEnemy(school);
+            if (currentEnemy != null) {
+                hunt(currentEnemy);
+            }
+            if (getOthers() == 0) {
+                driver.suggest(new Point2D.Double(getBattleFieldWidth() / 2.0, 400.0), 3);
+            }
+            driver.drive();
+            execute();
+            hasFired = false;
+            schoolHasFired = false;
+        }
+    }
+
+    private void initRound() {
+        if (school == null) {
+            school = new Enemies(this);
+        }
+        driver = new Driver(this);
+        double margin = getWidth() / 2;
+        fieldRectangle = new Rectangle2D.Double(0 + margin, 0 + margin,
+            getBattleFieldWidth() - margin, getBattleFieldHeight() - margin);
+        setColors(
+            new Color(255, (int)(20 + Math.random() * 80), (int)(60 + Math.random() * 180)),
+            new Color((int)(Math.random() * 80), 100 + (int)(Math.random() * 150), 255),
+            new Color((int)(20 + Math.random() * 80), 255, (int)(20 + Math.random() * 180))
+        );
+        setAdjustGunForRobotTurn(true);
+        setAdjustRadarForGunTurn(true);
+        radarTurnCompleteCondition = new RadarTurnCompleteCondition(this);
+        addCustomEvent(radarTurnCompleteCondition);
+        setTurnRadarRight(MC_FULL_TURN * 4);
+        oscillationDirection = Math.random() < 0.5 ? -1 : 1;
+        radarDirection = 1;
+        updateLocation();
+        isOneOnOne = false;
+        calculateDeltas = false;
+        driver.drive();
+    }
+
+    private void initTurn() {
+        totalTurns++;
+        time = getTime();
+        isMelee = getOthers() >= 2;
+        if (getOthers() == 1) {
+            isOneOnOne = true;
+            removeCustomEvent(radarTurnCompleteCondition);
+            if (!haveEnemy) {
+                setTurnRadarLeft(22.5);
+            }
+            haveEnemy = false;
+        }
+        updateLocation();
+    }
+
+    private void updateLocation() {
+        location.setLocation(getX(), getY());
+    }
+
+    private Enemy chooseEnemy(Enemies school) {
+        school.categorize();
+        Enemy closestEnemy = school.getClosest();
+        Enemy weakestEnemy = school.getWeakest();
+        Enemy easiestEnemy = school.getEasiest();
+        if (closestEnemy != null) { // && closestEnemy.getDistance() <= MC_CLOSE) {
+            return closestEnemy;
+        }
+        if (easiestEnemy != null) {
+            return easiestEnemy;
+        }
+        if (weakestEnemy != null && weakestEnemy.isDisabled()) {
+            return weakestEnemy;
+        }
+        if (weakestEnemy != null) {
+            return weakestEnemy;
+        }
+        return null;
+    }
+
+    private void hunt(Enemy enemy) {
+        int weight = 2;
+        weight -= isMelee ? 1 : 0;
+        if (enemy != null && enemy.isRecent()) {
+            if (enemy.getEnergy() > 0.0) {
+                if (getGunHeat()/getGunCoolingRate() < 2) {
+                    if ((!isAiming && (getEnergy() > 1.0)) || time % 20 == 0) {
+                        enemy.updateAimGuessing();
+                        aimGunAt(enemy);
+                        addCustomEvent(new ReadyToFireCondition(enemy));
+                    }
+                }
+                else {
+                    setTurnGunRight(Rutils.normalRelativeAngle(enemy.getAbsoluteBearing() - getGunHeading()));
+                }
+                moveRandomly(enemy, weight);
+            }
+            else if (getOthers() == 1) {
+                driver.setMargin(20.0);
+                driver.suggest(enemy.getLocation(), weight);
+            }
+        }
+    }
+
+    private void moveRandomly(Enemy enemy, int weight) {
+        if (Math.random() < 1.5) {
+            oscillate(enemy, weight);
+        }
+    }
+
+    private void oscillate(Enemy enemy, int weight) {
+        if (driver.isFinished()) {
+            oscillationDirection = Math.random() < 0.5 ? -1 : 1;
+            double angle = oscillationDirection * 90;
+            // Try making TuningFactor of the oscillation distance. Use random when no apriori
+            // knowledge exist and then try to learn what distances seem to work best.
+            double distance = 30 + Math.random() * enemy.getDistance() / 2.0;
+            driver.suggest(keepDistanceAngle(enemy, angle), distance, weight);
+        }
+    }
+
+    private void handleSchool() {
+        Iterator iterator = school.iterator();
+        while (iterator.hasNext()) {
+            Enemy enemy = (Enemy)iterator.next();
+            if (enemy.isFiring()) {
+                bulletsFiredAtMe++;
+                addCustomEvent(new EnemyBulletHasMissedCondition(enemy));
+                if (enemy.getEFirePower() >= 0.2 || getEnergy() < 4.4) {
+                    dodge(enemy, 10);
+                }
+                this.schoolHasFired = true;
+            }
+        }
+    }
+
+    private void aimGunAt(Enemy enemy) {
+        double guessedGunHeading;
+        guessedGunHeading = enemy.getGuessedGunHeading();
+        double gunTurn = Rutils.normalRelativeAngle(guessedGunHeading - getGunHeading());
+        setTurnGunRight(gunTurn);
+    }
+
+    private void dodge(Enemy enemy, int weight) {
+        Point2D enemyLocation = enemy.getLocation();
+        Point2D dLocation;
+        Point2D dLocation1 = new Point2D.Double();
+        Point2D dLocation2 = new Point2D.Double();
+        double sector;
+        if (driver.isFinished(weight)) {
+            for (sector = MC_SECTOR_AIM_MIN; sector <= MC_SECTOR_AIM_MAX; sector += sectorAimWidth) {
+                virtualDodgeFactor.incUses(sector);
+            }
+            virtualDodgeFactor.selectLowestResultsRatio();
+            if (virtualDodgeFactor.getUses() < 2) {
+                virtualDodgeFactor.selectRandom();
+            }
+            sector = virtualDodgeFactor.getValue();
+            virtualDodgeFactor.incTuning();
+            Rutils.toLocation(Rutils.normalRelativeAngle(enemy.getAbsoluteBearing() + 180.0) + sector,
+                enemy.getDistance(), enemyLocation, dLocation1);
+            if (fieldRectangle.contains(dLocation1)) {
+                dLocation = dLocation1;
+            }
+            else {
+                sector *= -1.0;
+                Rutils.toLocation(Rutils.normalRelativeAngle(enemy.getAbsoluteBearing() + 180.0) + sector,
+                    enemy.getDistance(), enemyLocation, dLocation2);
+                if (fieldRectangle.contains(dLocation2)) {
+                    dLocation = dLocation1;
+                }
+                else {
+                    dLocation = enemyLocation.distance(dLocation1) > enemyLocation.distance(dLocation2) ? dLocation1 : dLocation2;
+                }
+            }
+            driver.suggest(dLocation, weight);
+        }
+    }
+
+    private double keepDistanceAngle(Enemy enemy, double angle) {
+        double bestDistance = enemy.bestDistance();
+        if (isMelee) {
+            bestDistance *= 3;
+        }
+        if (enemy.getDistance() < bestDistance) {
+            angle += Rutils.sign(angle) * (20 + Math.random() * 15);
+        }
+        else {
+            angle += Rutils.sign(angle) * (5 - Math.random() * 10);
+        }
+        return enemy.getAbsoluteBearing() + angle;
+    }
+
+    private Enemy getEnemyByName(String name) {
+        Enemy searchFor = new Enemy(name);
+        int index = school.indexOf(searchFor);
+        if (index >= 0) {
+            Enemy found = (Enemy)school.get(index);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private void printStats() {
+        if (false) {
+            Iterator iterator = school.iterator();
+            while (iterator.hasNext()) {
+                Enemy enemy = (Enemy)iterator.next();
+                enemy.printStats();
+            }
+            virtualDodgeFactor.printStats("virtualDodgeFactor");
+            out.println("< " + bulletsHitMe + " / " + bulletsFiredAtMe + " = " +
+                Math.round(10000.0 * bulletsHitMe / bulletsFiredAtMe) / 100.0);
+            out.println("> " + bulletsHit + " / " + bulletsFired + " = " +
+                Math.round(10000.0 * bulletsHit / bulletsFired) / 100.0);
+            out.println("> 400-800 " + bulletsHit_400_800 + " / " + bulletsFired_400_800 + " = " +
+                Math.round(10000.0 * bulletsHit_400_800 / bulletsFired_400_800) / 100.0);
+            out.println("Expired bullets or on wrong target: " + (bulletsHit - bulletsOnTarget));
+        }
+        out.println("Turns skipped/total=ratio: " + skippedTurns + "/" + totalTurns + "=" +
+                Math.round(10000.0 * skippedTurns / totalTurns) / 100.0);
+    }
+
+    Point2D getLocation() {
+        return this.location;
+    }
+
+    double absoluteBearing(double bearing) {
+        return getHeading() + bearing;
+    }
+
+    boolean schoolHasFired() {
+        return this.schoolHasFired;
+    }
+
+    boolean hasFired() {
+        return this.hasFired;
+    }
+
+    boolean isCornered() {
+        return (driver.isCornered(location));
+    }
+
+    Rectangle2D getFieldRectangle() {
+        return fieldRectangle;
+    }
+
+    public void onHitRobot(HitRobotEvent e) {
+        driver.suggest(0 - absoluteBearing(e.getBearing()), MC_CLOSE * 2, 5);
+        Enemy enemy = getEnemyByName(e.getName());
+        if (enemy != null) {
+            currentEnemy = enemy;
+        }
+    }
+
+    public void onHitByBullet(HitByBulletEvent e) {
+        Enemy enemy = getEnemyByName(e.getName());
+        if (enemy != null) {
+            virtualDodgeFactor.incrementResults();
+            enemy.registerEHit();
+            if (isMelee) {
+                currentEnemy = enemy;
+            }
+        }
+        bulletsHitMe++;
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+        double radarTurn;
+        haveEnemy = true;
+        if (isOneOnOne) {
+            radarTurn = Rutils.normalRelativeAngle(getHeading() + e.getBearing() - getRadarHeading()) * 1.6;
+            setTurnRadarRight(radarTurn);
+        }
+        Enemy storedEnemy = getEnemyByName(e.getName());
+        if (storedEnemy != null) {
+            storedEnemy.update(calculateDeltas, e.getEnergy(), e.getBearing(), e.getDistance(),
+                e.getHeading(), e.getVelocity(), e.getTime());
+            storedEnemy.activate();
+        }
+        else {
+            school.add(new Enemy(this, e.getName(),
+                e.getEnergy(), e.getBearing(), e.getDistance(), e.getHeading(), e.getVelocity(), e.getTime()));
+        }
+        calculateDeltas = true;
+    }
+
+    public void onBulletHit(BulletHitEvent e) {
+        Enemy enemy = getEnemyByName(e.getName());
+        if (enemy != null) {
+            enemy.setDamage(enemy.getEnergy() - e.getEnergy());
+            if (enemy.getDistance() >= 400 && enemy.getDistance() <= 500) {
+                bulletsHit_400_800++;
+            }
+        }
+        bulletsHit++;
+    }
+
+    public void onDeath(DeathEvent e) {
+        school.deactivate();
+        printStats();
+    }
+
+    public void onRobotDeath(RobotDeathEvent e) {
+        Enemy enemy = getEnemyByName(e.getName());
+        if (enemy != null) {
+            enemy.deactivate();
+        }
+    }
+
+    public void onWin(WinEvent e) {
+        printStats();
+    }
+
+    public void onSkippedTurn(SkippedTurnEvent e) {
+        skippedTurns++;
+    }
+
+    public void onCustomEvent(CustomEvent e) {
+        Condition condition = e.getCondition();
+        if (condition instanceof ReadyToFireCondition) {
+            Enemy enemy = ((ReadyToFireCondition)condition).enemy;
+            Bullet bullet = fireBullet(enemy.rFirePower());		
+            if (bullet != null) {
+                addCustomEvent(new BulletHasHitOrMissedCondition(bullet, enemy));
+                addCustomEvent(new VirtualGunsFinishedCondition(enemy));
+                hasFired = true;
+                bulletsFired++;
+                if (enemy.getDistance() >= 400 && enemy.getDistance() <= 500) {
+                    bulletsFired_400_800++;
+                }
+            }
+        }
+        if (condition instanceof EnemyBulletHasMissedCondition) {
+            EnemyBulletHasMissedCondition c = (EnemyBulletHasMissedCondition)condition;
+            ((Enemy)(c.enemy)).registerEMissed();
+        }
+        if (condition instanceof BulletHasHitOrMissedCondition) {
+            BulletHasHitOrMissedCondition c = (BulletHasHitOrMissedCondition)condition;
+            Enemy enemy = c.enemy;
+            if (c.success) {
+                bulletsOnTarget++;
+            }
+        }
+        if (condition instanceof RadarTurnCompleteCondition) {
+            if (isOneOnOne) {
+                setTurnRadarLeft(22.5);
+            }
+            else {
+                double sweepTurn = school.getRadarSweepTurn(radarDirection);
+                setTurnRadarRight(sweepTurn);
+                radarDirection = 0 - Rutils.sign(sweepTurn); 
+            }
+        }
+
+    }
+
+    class ReadyToFireCondition extends Condition {
+        Enemy enemy;
+        double guessedGunHeading;
+
+        public ReadyToFireCondition(Enemy enemy) {
+            this.enemy = enemy;
+            this.guessedGunHeading = enemy.getGuessedGunHeading();
+            isAiming = true;
+        }
+
+        public boolean test() {
+            if (!this.enemy.isRecent()) {
+                removeCustomEvent(this);
+                return false;
+            }
+            if ((getGunHeat() == 0.0 && getGunTurnRemaining() == 0.0) || time % 20 == 0) {
+                isAiming = false;
+                removeCustomEvent(this);
+                return true;
+            }
+            return false;
+        }
+    }
+
+    class BulletHasHitOrMissedCondition extends Condition {
+        private Bullet bullet;
+        private long impactTime;
+        private String enemyName;
+        Enemy enemy;
+        boolean success;
+
+        public BulletHasHitOrMissedCondition(Bullet bullet, Enemy enemy) {
+            this.bullet = bullet;
+            this.enemy = enemy;
+            enemyName = enemy.getName();
+            enemy.registerRFired();
+            impactTime = enemy.impactTime() - 1;
+        }
+
+        public boolean test() {
+            if (bullet.getVictim() != null || time > impactTime) {
+                success = bullet.getVictim() == enemyName;
+                if (success) {
+                    enemy.registerRHit();
+                }
+                else {
+                    enemy.registerRMiss();
+                }
+                removeCustomEvent(this);
+                return true;
+            }
+            return false;
+        }
+    }
+
+    class VirtualGunsFinishedCondition extends Condition {
+        private Enemy enemy;
+        private Object[] vGuns;
+        private TuningFactor vgVirtualGunFactor;
+        private TuningFactor vgSectorAimFactor;
+
+        public VirtualGunsFinishedCondition(Enemy enemy) {
+            this.enemy = enemy;
+            this.vGuns = enemy.getVirtualGuns();
+            this.vgVirtualGunFactor = enemy.getVirtualGunFactor();
+            this.vgSectorAimFactor = enemy.getSectorAimFactor();
+        }
+
+        public boolean test() {
+            if (!enemy.checkVGunStatus(vGuns, vgVirtualGunFactor, vgSectorAimFactor)) {
+                removeCustomEvent(this);
+                return true;
+            }
+            return false;
+        }
+    }
+
+    class EnemyBulletHasMissedCondition extends Condition {
+        private Enemy enemy;
+        private long impactTime;
+        private double dodging;
+
+        public EnemyBulletHasMissedCondition(Enemy enemy) {
+            this.enemy = enemy;
+            this.impactTime = time + Rutils.travelTime(enemy.getDistance(), Rutils.bulletVelocity(enemy.getEFirePower()));
+            this.dodging = enemy.registerEFired(impactTime);
+        }
+
+        public boolean test() {
+            if (time > impactTime) {
+                removeCustomEvent(this);
+                return enemy.bulletHasNotHitYet();
+            }
+            return false;
+        }
+    }
+}

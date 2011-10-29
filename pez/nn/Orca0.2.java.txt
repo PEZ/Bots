@@ -1,0 +1,527 @@
+package pez.nn;
+import robocode.*;
+import pez.nn.nrlibj.*;
+import java.awt.geom.*;
+import java.awt.Color;
+import java.util.*;
+
+// Orca, by PEZ. A smart killer.
+// $Id: Orca.java,v 1.5 2003/04/09 11:12:00 peter Exp $
+
+public class Orca extends AdvancedRobot {
+    private final static double MAX_BEARING_DIFF = 45;
+    private final static double MAX_VELOCITY = 8;
+    private final static double MAX_BEARING_DELTA = 7;
+    private final static double MAX_DISTANCE_DELTA = 11;
+    private final static double MAX_HEADING_DELTA = 6;
+    private final static int HISTORY_DEPTH = 10;
+    private final static int HISTORY_ITEMS = 3;
+    private final static int NN_CANDIDATES = 7;
+    private final static double MIN_NETS_IN_TRAINING = 2;
+    private final static int MIN_TRAININGS = 5;
+    private final static int TRAINING_SESSION_LENGTH = 20;
+    private final static double NN_CANDIDATE_RATE_DEPTH = 15;
+    private final static double ALLOWED_HIT_RATE_DEGRADATION = -2;
+    private final static double MIN_ACCEPTED_HITRATE = 8;
+    private final static double MAX_HIT_RATE = 100;
+
+    private static Point2D location = new Point2D.Double();
+    private static Point2D oldLocation = new Point2D.Double();
+    private static Point2D enemyLocation = new Point2D.Double();
+    private static Point2D oldEnemyLocation = new Point2D.Double();
+    private static Rectangle2D fieldRectangle;
+    private boolean haveEnemy;
+    private static String enemyName;
+    private double guessedHeading;
+    private double enemyDistance;
+    private double enemyDistanceDelta;
+    private double enemyHeading;
+    private double enemyHeadingDelta;
+    private double enemyEnergy;
+    private double enemyVelocity;
+    private double absoluteBearing;
+    private double enemyBearingDelta;
+    private double bulletPower;
+    private long roundNum;
+    private boolean roundOver;
+    private int waitBeforeRam;
+    private static long time;
+    private static double meanOffsetFactor;
+    private static double meanAimFactor;
+    private static long wins;
+    private static long skippedTurns;
+
+    private double timeDelta;
+    private static double maxTimeDelta;
+    private static double maxDistance;
+    private static double rollingBearingDelta_1;
+    private static double rollingDistanceDelta_1;
+    private static double rollingBearingDelta_2;
+    private static double rollingDistanceDelta_2;
+    private static double rollingBearingDelta_3;
+    private static double rollingDistanceDelta_3;
+    private static int nNetsInTraining;
+    private static NNCandidate[] nnCandidate = new NNCandidate[NN_CANDIDATES];
+    private static LinkedList nnHistoryList = new LinkedList();
+    private float[] nnHistoryArray = new float[HISTORY_DEPTH * HISTORY_ITEMS + 3];
+    private double nnError;
+    private final static String NNdescr[] = {
+        "layer=0 tnode=33 nname=NodeLin",
+        "layer=1 tnode=40 nname=NodeSigm",
+        "layer=2 tnode=1 nname=NodeSigm",
+        "linktype=all fromlayer=0 tolayer=1",
+        "linktype=all fromlayer=1 tolayer=2"
+    };
+
+    public void run() {
+        if (fieldRectangle == null) {
+            initBattle();
+        }
+        roundOver = false;
+        setAdjustGunForRobotTurn(true);
+        setAdjustRadarForGunTurn(true);
+        addCustomEvent(new GunAimedCondition());
+
+        while (true) {
+            setMaxVelocity(Math.abs(getTurnRemaining()) > 45 ? 0.1 : 8.0);
+            selectNNetsForTraining();
+            if (!haveEnemy) {
+                setTurnRadarLeft(22.5);
+            }
+            haveEnemy = false;
+            execute();
+        }
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+        double radarTurn;
+        enemyName = e.getName();
+        oldLocation.setLocation(location);
+        location.setLocation(getX(), getY());
+        oldEnemyLocation.setLocation(enemyLocation);
+        absoluteBearing = getHeading() + e.getBearing();
+        enemyEnergy = e.getEnergy();
+        enemyVelocity = e.getVelocity();
+        enemyDistance = e.getDistance();
+        toLocation(absoluteBearing, enemyDistance, location, enemyLocation);
+        setBulletPower();
+        timeDelta = getTime() - time;
+        if (timeDelta > 0) {
+            if (timeDelta > maxTimeDelta) {
+                maxTimeDelta = timeDelta;
+            }
+            enemyBearingDelta = normalRelativeAngle(absoluteBearing(oldLocation, enemyLocation) -
+                absoluteBearing(oldLocation, oldEnemyLocation)) / timeDelta;
+            enemyDistanceDelta = (oldLocation.distance(oldEnemyLocation) - oldLocation.distance(enemyLocation)) / timeDelta;
+            enemyHeadingDelta = (enemyHeading - e.getHeading()) / timeDelta;
+            time = getTime();
+            if (enemyBearingDelta <= MAX_BEARING_DELTA) {
+                record();
+            }
+        }
+        enemyHeading= e.getHeading();
+        haveEnemy = true;
+        radarTurn = normalRelativeAngle(getHeading() + e.getBearing() - getRadarHeading()) * 2;
+        setTurnRadarRight(radarTurn);
+        if (getOthers() > 0 && getGunHeat() / getGunCoolingRate() < 2) {
+            aimGun();
+        }
+        else {
+            setTurnGunRight(normalRelativeAngle(absoluteBearing - getGunHeading()));
+        }
+        considerRamming();
+        moveRandomly();
+    }
+
+    public void onCustomEvent(CustomEvent e) {
+        if (e.getCondition() instanceof GunAimedCondition) {
+            if (enemyEnergy > 0) {
+                Bullet bullet = setFireBullet(bulletPower);
+                if (bullet != null) {
+                    addCustomEvent(new CheckUpdateFactors(bullet));
+                }
+            }
+        }
+    }
+
+    public void onWin(WinEvent e) {
+        wins++;
+        if (!roundOver) {
+            printStats();
+        }
+        roundOver = true;
+    }
+
+    public void onDeath(DeathEvent e) {
+        if (!roundOver) {
+            printStats();
+        }
+        roundOver = true;
+    }
+
+    public void onSkippedTurn(SkippedTurnEvent e) {
+        skippedTurns++;
+    }
+
+    private void initBattle() {
+        roundNum = getRoundNum();
+        fieldRectangle = new Rectangle2D.Double(0, 0 , getBattleFieldWidth(), getBattleFieldHeight());
+        setColors(Color.white, Color.black, Color.white);
+        maxDistance = (new Point2D.Double(20,20)).distance(
+            new Point2D.Double(fieldRectangle.getWidth() - 20, fieldRectangle.getHeight() - 20));
+        for (int i = 0; i < NN_CANDIDATES; i++) {
+            nnCandidate[i] = new NNCandidate();
+        }
+    }
+
+    private void aimGun() {
+        double guessedDistance = location.distance(enemyLocation);
+        guessedHeading = absoluteBearing(location, enemyLocation);
+        if (Math.abs(enemyBearingDelta) > 0.05) {
+            guessedHeading += enemyBearingDelta * meanAimFactor;
+        }
+        else {
+            guessedHeading += meanOffsetFactor;
+        }
+        Arrays.sort(nnCandidate);
+        if (nnCandidate[0].getTrainings() >= MIN_TRAININGS) {
+System.out.println("Best hitRate: " + nnCandidate[0].getHitRate());
+            nnCandidate[0].predict(nnHistoryArray);
+            guessedHeading += nnCandidate[0].getPrediction();
+        }
+        Point2D impactLocation = new Point2D.Double();
+        toLocation(guessedHeading, guessedDistance, location, impactLocation);
+        translateInsideField(impactLocation, 1);
+        guessedHeading = absoluteBearing(location, impactLocation);
+        setTurnGunRight(normalRelativeAngle(guessedHeading - getGunHeading()));
+    }
+
+    private void considerRamming() {
+        if (enemyEnergy == 0 && getOthers() == 1) {
+            if (waitBeforeRam == 0) {
+                goTo(enemyLocation);
+            }
+            else {
+                waitBeforeRam--;
+            }
+        }
+        else {
+            waitBeforeRam = 100;
+        }
+    }
+
+    private void moveRandomly() {
+        if (getDistanceRemaining() == 0) {
+            Point2D dLocation = new Point2D.Double();
+            double relativeAngle = -39.5 + 79 * Math.random();
+            double angle = absoluteBearing + 180 + relativeAngle;
+            double distanceExtra = Math.abs(relativeAngle) * (enemyDistance < 650 ? 4 : -1);
+            toLocation(angle, enemyDistance + distanceExtra, enemyLocation, dLocation);
+            translateInsideField(dLocation, 35);
+            goTo(dLocation);
+        }
+    }
+
+    private void setBulletPower() {
+        double power = 3;
+        power = Math.min(enemyEnergy / 3, 3);
+        power = Math.min(getEnergy() / 2, 3);
+        bulletPower = power;
+    }
+
+    private void goTo(Point2D point) {
+        double distance = location.distance(point);
+        double angle = normalRelativeAngle(absoluteBearing(location, point) - getHeading());
+        if (Math.abs(angle) > 90) {
+            distance *= -1;
+            if (angle > 0) {
+                angle -= 180;
+            }
+            else {
+                angle += 180;
+            }
+        }
+        setTurnRight(angle);
+        setAhead(distance);
+    }
+
+    private void translateInsideField(Point2D point, double margin) {
+        point.setLocation(Math.max(margin, Math.min(fieldRectangle.getWidth() - margin, point.getX())),
+                          Math.max(margin, Math.min(fieldRectangle.getHeight() - margin, point.getY())));
+    }
+
+    private static void toLocation(double angle, double length, Point2D sourceLocation, Point2D targetLocation) {
+        targetLocation.setLocation(sourceLocation.getX() + Math.sin(Math.toRadians(angle)) * length,
+                                   sourceLocation.getY() + Math.cos(Math.toRadians(angle)) * length);
+    }
+
+    private static double absoluteBearing(Point2D source, Point2D target) {
+        return Math.toDegrees(Math.atan2(target.getX() - source.getX(), target.getY() - source.getY()));
+    }
+
+    private static double normalRelativeAngle(double angle) {
+        double relativeAngle = angle % 360;
+        if (relativeAngle <= -180 )
+            return 180 + (relativeAngle % 180);
+        else if ( relativeAngle > 180 )
+            return -180 + (relativeAngle % 180);
+        else
+            return relativeAngle;
+    }
+
+    private static double rollingAvg(double value, double newEntry, double n, double weighting ) {
+        return (value * n + newEntry * weighting)/(n + weighting);
+    } 
+
+    private static float nnNormalizedValue(double value, double max) {
+        return (float)((value + max) / (2 * max));
+    }
+
+    private void record() {
+        rollingBearingDelta_1 = rollingAvg(rollingBearingDelta_1, enemyBearingDelta, 15, 1);
+        /*
+        rollingBearingDelta_2 = rollingAvg(rollingBearingDelta_2, enemyBearingDelta, 20, 1);
+        rollingBearingDelta_3 = rollingAvg(rollingBearingDelta_3, enemyBearingDelta, 40, 1);
+        rollingDistanceDelta_1 = rollingAvg(rollingDistanceDelta_1, enemyDistanceDelta, 10, 1);
+        rollingDistanceDelta_2 = rollingAvg(rollingDistanceDelta_2, enemyDistanceDelta, 20, 1);
+        rollingDistanceDelta_3 = rollingAvg(rollingDistanceDelta_3, enemyDistanceDelta, 20, 1);
+        */
+        nnHistoryList.addLast(new Double(nnNormalizedValue(enemyBearingDelta, MAX_BEARING_DELTA)));
+        nnHistoryList.addLast(new Double(nnNormalizedValue(enemyHeadingDelta, MAX_HEADING_DELTA)));
+        nnHistoryList.addLast(new Double((float)(enemyVelocity / MAX_VELOCITY)));
+        //nnHistoryList.addLast(new Double(nnNormalizedValue(enemyDistanceDelta, MAX_DISTANCE_DELTA)));
+        if (nnHistoryList.size() > HISTORY_DEPTH * HISTORY_ITEMS) {
+            for (int i = 0; i < HISTORY_ITEMS; i++) {
+                nnHistoryList.removeFirst();
+            }
+            int i;
+            for (i = 0; i < HISTORY_DEPTH * HISTORY_ITEMS; i++) {
+                nnHistoryArray[i] = ((Double)(nnHistoryList.get(i))).floatValue();
+            }
+            i = HISTORY_DEPTH * HISTORY_ITEMS; // is this necessary????
+            nnHistoryArray[i++] = (float)(enemyDistance / maxDistance);
+            nnHistoryArray[i++] = (float)(bulletPower / 3);
+            nnHistoryArray[i++] = nnNormalizedValue(rollingBearingDelta_1, MAX_BEARING_DELTA);
+            /*
+            nnHistoryArray[i++] = nnNormalizedValue(rollingBearingDelta_2, MAX_BEARING_DELTA);
+            nnHistoryArray[i++] = nnNormalizedValue(rollingBearingDelta_3, MAX_BEARING_DELTA);
+            nnHistoryArray[i++] = nnNormalizedValue(rollingDistanceDelta_1, MAX_DISTANCE_DELTA);
+            nnHistoryArray[i++] = nnNormalizedValue(rollingDistanceDelta_2, MAX_DISTANCE_DELTA);
+            nnHistoryArray[i++] = nnNormalizedValue(rollingDistanceDelta_3, MAX_DISTANCE_DELTA);
+            */
+        }
+    }
+
+    private void selectNNetsForTraining() {
+        int numSelected = 0;
+        int numInTraining = 0;
+        for (int i = 0; i < NN_CANDIDATES; i++) {
+            if (nnCandidate[i].isInTraining()) {
+                numInTraining++;
+                if (nnCandidate[i].getTrainingsThisSession() > TRAINING_SESSION_LENGTH) {
+                    double trainingResults = nnCandidate[i].validateTraining();
+                    if (trainingResults > 0) {
+                        nnCandidate[i].setInTraining(true);
+                        nnCandidate[i].initiateTraining();
+                    }
+                    else {
+                        nnCandidate[i].setInTraining(false);
+                    }
+
+                }
+            }
+        }
+        if (numInTraining < MIN_NETS_IN_TRAINING) {
+            int net = (int)Math.floor((Math.random() * NN_CANDIDATES));
+            nnCandidate[net].setInTraining(true);
+            nnCandidate[net].initiateTraining();
+        }
+    }
+
+    private void printStats() {
+        System.out.println("Wins: " + wins);
+        System.out.println("nnError: " + nnError);
+        //System.out.println("skippedTurns: " + skippedTurns);
+    }
+
+    class CheckUpdateFactors extends Condition {
+        private long time;
+        private double bulletVelocity;
+        private double bulletPower;
+        private double bearingDelta;
+        private Point2D oldRLocation = new Point2D.Double();
+        private Point2D oldELocation = new Point2D.Double();
+        private double oldBearing;
+	private float[] history = new float[HISTORY_DEPTH * HISTORY_ITEMS + 3];
+        private double[] prediction = new double[NN_CANDIDATES];
+
+        public CheckUpdateFactors(Bullet bullet) {
+            this.time = getTime();
+            this.bulletVelocity = bullet.getVelocity();
+            this.bulletPower = bullet.getPower();
+            this.bearingDelta = enemyBearingDelta;
+            this.oldRLocation.setLocation(location);
+            this.oldELocation.setLocation(enemyLocation);
+            this.oldBearing = absoluteBearing(oldRLocation, oldELocation);
+            System.arraycopy(nnHistoryArray, 0, history, 0, nnHistoryArray.length);
+            for (int i = 0; i < NN_CANDIDATES; i++) {
+                this.prediction[i] = nnCandidate[i].getPrediction();
+            }
+        }
+
+        public boolean test() {
+            if (getOthers() == 0) {
+                removeCustomEvent(this);
+                return false;
+            }
+            double bulletDistance = bulletVelocity * (getTime() - time);
+            if (bulletDistance > location.distance(enemyLocation) - 10) {
+                double impactBearing = absoluteBearing(oldRLocation, enemyLocation);
+                double bearingDiff = normalRelativeAngle(impactBearing - oldBearing);
+                for (int i = 0; i < NN_CANDIDATES; i++) {
+                    if (Math.abs(prediction[i] - bearingDiff) < Math.toDegrees(Math.atan(20 / bulletDistance))) {
+                        nnCandidate[i].updateHitRate(MAX_HIT_RATE, bulletPower);
+                    }
+                    else {
+                        nnCandidate[i].updateHitRate(0, bulletPower);
+                    }
+                }
+                if (bearingDiff <= MAX_BEARING_DIFF) {
+                    if (nnHistoryList.size() == HISTORY_DEPTH * HISTORY_ITEMS) { 
+                        float nnCorrectAnswer[] = { nnNormalizedValue(bearingDiff, MAX_BEARING_DIFF) };
+                        for (int i = 0; i < NN_CANDIDATES; i++) {
+System.out.println("nnCandidate: " + i + ", inTraining: " + nnCandidate[i].isInTraining() + ", hitRate: " + nnCandidate[i].getHitRate());
+                            if (nnCandidate[i].isInTraining()) {
+                                nnError = nnCandidate[i].train(history, nnCorrectAnswer);
+                            }
+                        }
+                    }
+                    meanOffsetFactor = rollingAvg(meanOffsetFactor, bearingDiff, 2, this.bulletPower);
+                    if (Math.abs(bearingDelta) > 0.05 && bearingDelta <= MAX_BEARING_DELTA) {
+                        double factor = bearingDiff / bearingDelta;
+                        meanAimFactor = rollingAvg(meanAimFactor, factor, 75, this.bulletPower);
+                    }
+                }
+                removeCustomEvent(this);
+            }
+            return false;
+        }
+    }
+
+    class GunAimedCondition extends Condition {
+        public boolean test() {
+            return (getGunHeat() == 0 && getGunTurnRemaining() == 0);
+        }
+    }
+
+    class NNCandidate implements Comparable {
+        private pez.nn.nrlibj.NNet nnet;
+        private pez.nn.nrlibj.NNet nnetBackup;;
+        private double nnError;
+        private double prediction;
+        private long trainings;
+        private int trainingsThisSession;
+        private double hitRate;
+        private double hitRateBackup;
+        private double bestHitRate;
+        private boolean inTraining;
+
+        public NNCandidate() {
+            pez.nn.nrlibj.NrPop.setSeed();
+            nnet = new pez.nn.nrlibj.NNet(NNdescr);
+        }
+
+        public NNCandidate(pez.nn.nrlibj.NNet nnet) {
+            this.nnet = nnet;
+        }
+
+        public int compareTo(Object o) {
+            NNCandidate nnC = (NNCandidate) o;
+            if (this.getHitRate() > nnC.getHitRate()) {
+                return -1;
+            }
+            if (this.getHitRate() < nnC.getHitRate()) {
+                return +1;
+            }
+            return 0;
+        }
+
+        public boolean equals(Object object) {
+            if (object instanceof NNCandidate) {
+                return (((NNCandidate)object).getHitRate() == this.getHitRate());
+            }
+            return false;
+        }
+
+        pez.nn.nrlibj.NNet getNNet() {
+            return this.nnet;
+        }
+
+        double getError() {
+            return nnError;
+        }
+
+        double train(float[] input, float[] answer) {
+            nnError = nnet.ebplearnNNet(input, answer);
+            trainings++;
+            trainingsThisSession++;
+            return nnError;
+        }
+
+        long getTrainings() {
+            return this.trainings;
+        }
+
+        void predict(float[] input) {
+            float[] nnAnswer = new float[1];
+            nnet.frwNNet(input, nnAnswer);
+            prediction = (0 - MAX_BEARING_DIFF) + MAX_BEARING_DIFF * 2 * nnAnswer[0];
+        }
+
+        double getPrediction() {
+            return this.prediction;
+        }
+
+        void updateHitRate(double hitValue, double weight) {
+            this.hitRate = rollingAvg(this.hitRate, hitValue, NN_CANDIDATE_RATE_DEPTH, weight);
+        }
+
+        double getHitRate() {
+            if (trainings >= MIN_TRAININGS) {
+                return this.hitRate;
+            }
+            else {
+                return 0;
+            }
+        }
+        
+        boolean isInTraining() {
+            return this.inTraining;
+        }
+
+        void setInTraining(boolean inTraining) {
+            this.inTraining = inTraining;
+        }
+
+        void initiateTraining() {
+            nnetBackup = nnet.cloneNNet();
+            hitRateBackup = hitRate;
+            trainingsThisSession = 0;
+        }
+
+        int getTrainingsThisSession() {
+            return this.trainingsThisSession;
+        }
+
+        double validateTraining() {
+            double hitRateDelta = hitRate - hitRateBackup;
+            if (hitRate > bestHitRate) {
+                bestHitRate = hitRate;
+            }
+            if (hitRateDelta < ALLOWED_HIT_RATE_DEGRADATION || bestHitRate < MIN_ACCEPTED_HITRATE) {
+                nnet = nnetBackup;
+            }
+            return hitRateDelta;
+        }
+    }
+}

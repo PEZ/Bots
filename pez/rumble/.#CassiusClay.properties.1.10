@@ -1,0 +1,9 @@
+#Robot Properties
+#Mon Aug 16 00:57:10 CEST 2004
+robot.description=Float like a butterfly\!\nSting like a bee\!
+robot.webpage=http\://robowiki.net/?CassiusClay
+robocode.version=1.0.6
+robot.java.source.included=true
+robot.version=1.9.5.5
+robot.author.name=PEZ
+robot.classname=pez.rumble.CassiusClay

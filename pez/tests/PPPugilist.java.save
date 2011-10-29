@@ -1,0 +1,542 @@
+package pez.tests;
+import robocode.*;
+import robocode.util.Utils;
+import java.util.*;
+import java.awt.geom.*;
+import java.awt.Color;
+
+import robocode.robocodeGL.*; // GL
+import robocode.robocodeGL.system.*; // GL
+import java.lang.reflect.*; // GL
+
+// This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
+// http://robowiki.net/?RWPCL
+//
+// PPPugilist, by PEZ. A Precise Prediction Pugilist
+// http://robowiki.net/?PPPugilist
+//
+// Ideas and concepts are often my own, but i have borrowed from many places too. Quite often from Jamougha and Kawigi.
+// This particular bot contains a movement predictor devoloped by Rozu and tuned by Jim. See
+// http://robowiki.net/?Apollon for some more info on the predictor.
+//
+// $Id: PPPugilist.java,v 1.1 2004/03/18 14:37:56 peter Exp $
+
+public class PPPugilist extends AdvancedRobot {
+    static final double BOT_WIDTH = 36;
+    static final double MAX_VELOCITY = 8;
+
+    static final double BATTLE_FIELD_WIDTH = 800;
+    static final double BATTLE_FIELD_HEIGHT = 600;
+    static final double MAX_WALL_SMOOTH_TRIES = 200;
+    static final double WALL_MARGIN = 28;
+    static final Rectangle2D fieldRectangle = new Rectangle2D.Double(WALL_MARGIN, WALL_MARGIN,
+	    BATTLE_FIELD_WIDTH - WALL_MARGIN * 2, BATTLE_FIELD_HEIGHT - WALL_MARGIN * 2);
+
+    static final double MAX_DISTANCE = 900;
+    static final double MAX_BULLET_POWER = 3.0;
+    static final double BULLET_POWER = 2.2;
+
+    static final int MOVE_FACTORS = 13;
+    static final int MOVE_MIDDLE_FACTOR = (MOVE_FACTORS - 1) / 2;
+    static final int AIM_FACTORS = 27;
+    static final int AIM_MIDDLE_FACTOR = (AIM_FACTORS - 1) / 2;
+    static final int AIM_DISTANCE_INDEXES = 5;
+    static final int VELOCITY_INDEXES = 5;
+    static final int LAST_VELOCITY_INDEXES = 5;
+    static final int DECCEL_TIME_INDEXES = 6;
+    static final int WALL_INDEXES = 2;
+    static final int DECCEL_INDEXES = 2;
+    static final int MOVE_WALL_INDEXES = 7;
+    static final int MOVE_DISTANCE_INDEXES = 5;
+    static final int BULLET_POWER_INDEXES = 3;
+
+
+    static Point2D robotLocation = new Point2D.Double();
+    static Point2D enemyLocation = new Point2D.Double();
+    static double enemyDistance;
+    static int distanceIndex;
+    static double enemyVelocity;
+    double enemyEnergy;
+    static int enemyTimeSinceDeccel;
+    static double enemyBearingDirection = 0.75;
+    static int[][][][][][] aimFactors = new int[AIM_DISTANCE_INDEXES][VELOCITY_INDEXES][LAST_VELOCITY_INDEXES][DECCEL_TIME_INDEXES][WALL_INDEXES][AIM_FACTORS];
+
+    static double enemyFirePower = 2.5;
+    static double robotBearingDirection = 1;
+    static double robotVelocity;
+    static double lastRobotVelocity;
+    static int[][][][][] moveFactors = new int[MOVE_DISTANCE_INDEXES][BULLET_POWER_INDEXES][VELOCITY_INDEXES][VELOCITY_INDEXES][MOVE_FACTORS];
+    static int[][][][][] hitFactors = new int[MOVE_DISTANCE_INDEXES][BULLET_POWER_INDEXES][VELOCITY_INDEXES][VELOCITY_INDEXES][MOVE_FACTORS];
+    static int enemyHits;
+    static double visitsForward;
+    static double visitsReverse;
+    static double orbitDirection = 1;
+    static double distanceFactor = 1.3;
+    static double wallSmoothTries;
+
+    public void run() {
+	setAdjustRadarForGunTurn(true);
+	setAdjustGunForRobotTurn(true);
+
+	EnemyWave.passingWave = null;
+
+	do {
+	    turnRadarRightRadians(Double.POSITIVE_INFINITY); 
+	} while (true);
+    }
+
+    public void onScannedRobot(ScannedRobotEvent e) {
+	Wave wave = new Wave();
+	wave.robot = this;
+	EnemyWave ew = new EnemyWave();
+	ew.robot = this;
+	ew.gunLocation = new Point2D.Double(enemyLocation.getX(), enemyLocation.getY());
+	ew.startBearing = ew.gunBearing(robotLocation);
+
+	double enemyDeltaEnergy = enemyEnergy - e.getEnergy();
+	if (enemyDeltaEnergy > 0 && enemyDeltaEnergy <= 3.0) {
+	    enemyFirePower = enemyDeltaEnergy;
+	    ew.surfable = true;
+	}
+	enemyEnergy = e.getEnergy();
+	ew.bulletVelocity = bulletVelocity(enemyFirePower);
+
+	ew.bearingDirection = (robotBearingDirection * Math.asin(MAX_VELOCITY / ew.bulletVelocity)) / (double)MOVE_MIDDLE_FACTOR;
+
+	distanceIndex = (int)(enemyDistance / (MAX_DISTANCE / MOVE_DISTANCE_INDEXES));
+
+	ew.visits = moveFactors[distanceIndex]
+	    [(int)(enemyFirePower / 1.51)]
+	    [(int)(lastRobotVelocity / 2)]
+	    [(int)(robotVelocity / 2)]
+	    ;
+	ew.hits = hitFactors[distanceIndex]
+	    [(int)(enemyFirePower / 1.51)]
+	    [(int)(lastRobotVelocity / 2)]
+	    [(int)(robotVelocity / 2)]
+	    ;
+
+	ew.targetLocation = robotLocation;
+	ew.advance(2);
+	addCustomEvent(ew);
+
+	lastRobotVelocity = robotVelocity;
+	robotVelocity = Math.abs(getVelocity());
+	robotLocation.setLocation(new Point2D.Double(getX(), getY()));
+	enemyDistance = e.getDistance();
+
+	double enemyAbsoluteBearing = getHeadingRadians() + e.getBearingRadians();
+	enemyLocation.setLocation(project(wave.gunLocation = new Point2D.Double(getX(), getY()), enemyAbsoluteBearing, enemyDistance));
+	wave.targetLocation = enemyLocation;
+	distanceIndex = (int)(enemyDistance / (MAX_DISTANCE / AIM_DISTANCE_INDEXES));
+
+	// <gun>
+	int lastVelocityIndex = (int)Math.abs(enemyVelocity) / 2;
+	int velocityIndex = (int)Math.abs((enemyVelocity = e.getVelocity()) / 2);
+	if (velocityIndex < lastVelocityIndex) {
+	    enemyTimeSinceDeccel = 0;
+	}
+
+	//double bulletPower = MAX_BULLET_POWER; // TargetingChallenge
+	double bulletPower = Math.min(enemyEnergy / 4, distanceIndex > 2 ? BULLET_POWER : MAX_BULLET_POWER);
+	wave.bulletVelocity = bulletVelocity(bulletPower);
+
+	if (enemyVelocity != 0) {
+	    enemyBearingDirection = 0.75 * sign(enemyVelocity * Math.sin(e.getHeadingRadians() - enemyAbsoluteBearing));
+	}
+	wave.bearingDirection = enemyBearingDirection / (double)AIM_MIDDLE_FACTOR;
+
+	wave.visits = aimFactors[distanceIndex][velocityIndex][lastVelocityIndex][Math.min(5, enemyTimeSinceDeccel++ / 13)]
+	    [fieldRectangle.contains(project(wave.gunLocation, enemyAbsoluteBearing + wave.bearingDirection * 13, enemyDistance)) ? 1 : 0];
+
+	wave.startBearing = enemyAbsoluteBearing;
+
+	setTurnGunRightRadians(Utils.normalRelativeAngle(enemyAbsoluteBearing - getGunHeadingRadians() +
+		    wave.bearingDirection * (wave.mostVisited() - AIM_MIDDLE_FACTOR)));
+
+	if (getEnergy() >= BULLET_POWER) {
+	    setFire(bulletPower); // Movement Challenge
+	    addCustomEvent(wave);
+	}
+	// </gun>
+
+	Point2D destination = wallSmoothedDestination(enemyLocation, robotLocation, orbitDirection * Math.atan2(170, enemyDistance), true);
+	// Jamougha's cool way
+	double angle;
+	setAhead(Math.cos(angle = wave.gunBearing(destination) - getHeadingRadians()) * 100);
+	setTurnRightRadians(Math.tan(angle));
+
+	setTurnRadarRightRadians(Utils.normalRelativeAngle(enemyAbsoluteBearing - getRadarHeadingRadians()) * 2);
+
+//	if (ew.surfable) { // GL
+//	    ew.grapher = new WaveGrapher(ew); // GL
+//	} // GL
+
+	visitsForward = visitsReverse = 0;
+    }
+
+    public void onHitByBullet(HitByBulletEvent e) {
+	EnemyWave wave = EnemyWave.passingWave;
+	if (wave != null) {
+	    //wave.registerHits(++enemyHits * (getRoundNum() + 1));
+	}
+    }
+
+    static int skipped;
+    public void onSkippedTurn(SkippedTurnEvent e) {
+	out.println("skipped: " + ++skipped);
+    }
+
+    static Point2D wallSmoothedDestination(Point2D orbitLocation, Point2D satelliteLocation,
+	    double deltaBearing, boolean isRealMovement) {
+	Point2D destination = null;
+	double tries;
+	tries = 0;
+	while (!fieldRectangle.contains(destination = project(orbitLocation,
+		absoluteBearing(orbitLocation, satelliteLocation) + deltaBearing,
+		robotLocation.distance(orbitLocation) * (distanceFactor - tries / 100))) &&
+		tries < MAX_WALL_SMOOTH_TRIES) {
+	    tries++;
+	}
+	if (isRealMovement) {
+	    wallSmoothTries = tries;
+	}
+	return destination;
+    }
+
+    void updateDirectionStats(EnemyWave wave) {
+	double lateralVelocity = getVelocity() * Math.sin(getHeadingRadians() - wave.startBearing);
+	if (lateralVelocity != 0) {
+	    robotBearingDirection = sign(lateralVelocity);
+	}
+
+	double timeToImpact = wave.distanceToTarget() / wave.bulletVelocity;
+	double velocity = getVelocity();
+	double heading = getHeadingRadians();
+	Point2D destination;
+
+	destination = wallSmoothedDestination(wave.gunLocation, robotLocation,
+		-Math.atan2(timeToImpact * MAX_VELOCITY * robotBearingDirection, enemyDistance), false);
+	destination = predictLocation(destination, (int)timeToImpact, velocity, heading);
+	visitsReverse += wave.smoothedVisits(destination);
+
+//	wave.grapher.drawReverseDestination(destination, wave.smoothedVisits(destination)); // GL
+
+	destination = wallSmoothedDestination(wave.gunLocation, robotLocation,
+	    Math.atan2(timeToImpact * MAX_VELOCITY * robotBearingDirection, enemyDistance), false);
+	destination = predictLocation(destination, (int)timeToImpact, velocity, heading);
+	visitsForward += wave.smoothedVisits(destination);
+
+//	wave.grapher.drawForwardDestination(destination, wave.smoothedVisits(destination)); // GL
+
+	if (visitsForward > 0) {
+	    orbitDirection = robotBearingDirection;
+	    if (visitsReverse < visitsForward || wallSmoothTries > 45) {
+		orbitDirection = -robotBearingDirection;
+	    }
+	}
+    }
+
+    // rozu's predictor function, with Jim's enhancements
+    private Point2D predictLocation(Point2D moveTo, int numTicks, double velocity, double heading) {
+	Point2D guessLoc = new Point2D.Double(getX(), getY());
+	int counter = 0;
+	do {
+	    double angle = Utils.normalRelativeAngle(absoluteBearing(guessLoc, moveTo) - heading);
+	    double turnAngle = Math.atan(Math.tan(angle));
+
+	    int moveDir = angle == turnAngle ? 1 : -1;
+	    double maxTurning = Math.PI / 720d * (40d - 3d * Math.abs(velocity));
+	    velocity += (velocity * moveDir < 0 ? 2 * moveDir : moveDir);
+	    velocity = minMax(velocity, -8, 8);
+
+	    turnAngle = minMax(turnAngle, -maxTurning, maxTurning);
+	    heading = Utils.normalRelativeAngle(heading + turnAngle);
+
+	    guessLoc.setLocation(guessLoc.getX() + (Math.sin(heading) * velocity), guessLoc.getY() + (Math.cos(heading) * velocity));
+	} while (++counter < numTicks);
+	return guessLoc;
+    }
+
+    static double bulletVelocity(double bulletPower) {
+	return 20 - 3 * bulletPower;
+    }
+
+    static Point2D project(Point2D sourceLocation, double angle, double length) {
+	return new Point2D.Double(sourceLocation.getX() + Math.sin(angle) * length,
+		sourceLocation.getY() + Math.cos(angle) * length);
+    }
+
+    static double absoluteBearing(Point2D source, Point2D target) {
+	return Math.atan2(target.getX() - source.getX(), target.getY() - source.getY());
+    }
+
+    static int sign(double v) {
+        return v < 0 ? -1 : 1;
+    }
+
+    static double minMax(double v, double min, double max) {
+	return Math.max(min, Math.min(max, v));
+    }
+}
+
+class Wave extends Condition {
+    PPPugilist robot;
+    double bulletVelocity;
+    Point2D gunLocation;
+    Point2D targetLocation;
+    double startBearing;
+    double bearingDirection;
+    int[] visits;
+    double distanceFromGun;
+
+    public boolean test() {
+	advance(1);
+	if (passing(-18)) {
+	    if (robot.getOthers() > 0) {
+		registerVisits(1);
+	    }
+	    robot.removeCustomEvent(this);
+	}
+	return false;
+    }
+
+    public boolean passing(double distanceOffset) {
+	return distanceFromGun > gunLocation.distance(targetLocation) + distanceOffset;
+    }
+
+    void advance(int ticks) {
+	distanceFromGun += ticks * bulletVelocity;
+    }
+
+    int visitingIndex(Point2D target, int[] stats) {
+	return (int)PPPugilist.minMax(
+	    Math.round(((Utils.normalRelativeAngle(gunBearing(target) - startBearing)) / bearingDirection) + (stats.length -1) / 2), 0 , stats.length - 1);
+    }
+
+    void registerVisits(int count) {
+	visits[visitingIndex(targetLocation, visits)] += count;
+    }
+
+    double gunBearing(Point2D target) {
+	return PPPugilist.absoluteBearing(gunLocation, target);
+    }
+
+    double distanceToTarget() {
+	return gunLocation.distance(targetLocation) - distanceFromGun;
+    }
+
+    int mostVisited() {
+	int mostVisited = (visits.length -1) / 2, i = visits.length - 1;
+	do  {
+	    if (visits[--i] > visits[mostVisited]) {
+		mostVisited = i;
+	    }
+	} while (i > 0);
+	return mostVisited;
+    }
+
+    double smoothedVisits(Point2D destination) {
+	return smoothedVisits(visitingIndex(destination, visits));
+    }
+
+    double smoothedVisits(int index) {
+	return (double)visits[index] / Math.sqrt(distanceToTarget() / bulletVelocity);
+    }
+}
+
+class EnemyWave extends Wave {
+//    WaveGrapher grapher; // GL
+    static EnemyWave passingWave;
+    static int[] hits;
+
+    boolean surfable;
+
+    public boolean test() {
+	advance(1);
+	if (passing(-18)) {
+	    if (this != passingWave && robot.getEnergy() > 0) {
+		registerVisits(1);
+		surfable = false;
+		passingWave = this;
+	    }
+	}
+	if (passing(18)) {
+	    robot.removeCustomEvent(this);
+	    passingWave = null;
+
+//	    if (grapher != null) { // GL
+//		grapher.remove(); // GL
+//	    } // GL
+	}
+	if (surfable) {
+	    robot.updateDirectionStats(this);
+	}
+//	if (grapher != null) { // GL
+//	    grapher.drawWave(); // GL
+//	} // GL
+	return false;
+    }
+
+    void registerHits(int count) {
+	hits[visitingIndex(targetLocation, hits)] += count;
+    }
+
+    double smoothedVisits(Point2D destination) {
+	return super.smoothedVisits(destination) + 10 * smoothedHits(destination);
+    }
+
+    double smoothedHits(Point2D destination) {
+	return smoothedHits(visitingIndex(destination, hits));
+    }
+
+    double smoothedHits(int index) {
+	return (double)hits[index] / Math.sqrt(distanceToTarget() / bulletVelocity);
+    }
+}
+
+/* GL */
+class WaveGrapher {
+    static GLRenderer renderer = GLRenderer.getInstance();
+    static int counter = 0;
+    String id;
+    Wave wave;
+    PointGL[] dots;
+    PointGL reverseDestination = new PointGL();
+    PointGL forwardDestination = new PointGL();
+    LabelGL reverseLabel = new LabelGL("");
+    LabelGL forwardLabel = new LabelGL("");
+
+    StatGrapher statGrapher;
+
+    
+    WaveGrapher(Wave wave) {
+	this.id = "" + counter++;
+	this.wave = wave;
+	this.dots = new PointGL[wave.visits.length];
+	for (int i = 0; i < dots.length; i++) {
+	    dots[i] = new PointGL();
+	    dots[i].setColor(Color.BLUE);
+	    if (i == (dots.length - 1) / 2) {
+		dots[i].addLabel(new LabelGL(id));
+	    }
+	    renderer.addRenderElement(dots[i]);
+	}
+	reverseDestination.addLabel(reverseLabel);
+	reverseDestination.setColor(Color.RED);
+	reverseDestination.setSize(10);
+	reverseDestination.setPosition(-100, -100);
+	forwardDestination.addLabel(forwardLabel);
+	forwardDestination.setColor(Color.GREEN);
+	forwardDestination.setSize(10);
+	forwardDestination.setPosition(-100, -100);
+	renderer.addRenderElement(reverseDestination);
+	renderer.addRenderElement(forwardDestination);
+	statGrapher = new StatGrapher(Color.YELLOW, wave.visits);
+	statGrapher.setFrame(0, 0, PPPugilist.BATTLE_FIELD_WIDTH, PPPugilist.BATTLE_FIELD_HEIGHT);
+    }
+
+    void drawWave() {
+	float totalVisits = 0;
+	for (int i = 0; i < wave.visits.length; i++) {
+	    totalVisits += wave.smoothedVisits(i);
+	}
+	for (int i = 0; i < dots.length; i++) {
+	    Point2D dot = PPPugilist.project(wave.gunLocation,
+					  wave.startBearing + wave.bearingDirection * (i - (dots.length - 1) / 2),
+					  wave.distanceFromGun);
+	    dots[i].setPosition(dot.getX(), dot.getY());
+	    float size = 15 * (float)wave.smoothedVisits(i) / totalVisits;
+	    //float size = 15 * (float)wave.smoothedVisits(i) / totalVisits;
+	    dots[i].setSize(size);
+	}
+	statGrapher.draw();
+    }
+
+    void drawDestination(PointGL destination, LabelGL label, Point2D coords, double value) {
+	destination.setPosition(coords.getX(), coords.getY());
+	label.setString(id + " : " + (int)value);
+    }
+
+    void drawReverseDestination(Point2D coords, double value) {
+	drawDestination(reverseDestination, reverseLabel, coords, value);
+    }
+
+    void drawForwardDestination(Point2D coords, double value) {
+	drawDestination(forwardDestination, forwardLabel, coords, value);
+    }
+
+    void remove() {
+	for (int i = 0; i < dots.length; i++) {
+	    dots[i].remove();
+	}
+	reverseDestination.remove();
+	forwardDestination.remove();
+	statGrapher.remove();
+    }
+}
+
+// A modified version of Nano's http://robowiki.net/?StatGrapher
+class StatGrapher {
+    private LineGL[] graph;
+    private Object stats;
+    private Object selected;
+    private double x, y, width, height;
+    private double lineWidth = 2;
+    private Color color = Color.GREEN;
+
+    public StatGrapher(Color color, Object stats) {
+	this.color = color;
+	this.stats = this.selected = stats;
+	graph = new LineGL[Array.getLength(selected) - 1];
+	for (int i = 0; i < graph.length; i++) {
+	    graph[i] = new LineGL();
+	}
+
+    }
+
+    public void setFrame(double x, double y, double width, double height) {
+	setX(x); setY(y); setWidth(width); setHeight(height);
+    }
+
+    public void setX(double x) { this.x = x; }
+    public void setY(double y) { this.y = y; }
+    public void setWidth(double width) { this.width = width; }
+    public void setHeight(double height) { this.height = height; }
+    public void setStats(Object stats) { this.stats = this.selected = stats; }
+    public void setColor(Color color) { this.color = color; }
+
+    public void selectSegment(int[] indices) {
+	Object temp = stats;
+
+	for (int i = 0; indices != null && i < indices.length; i++)
+	    temp = Array.get(temp, indices[i]);
+
+	selected = temp;
+    }
+
+    public void draw() {
+	double highestValue = 1;
+
+	for (int i = 0; i < Array.getLength(selected); i++)
+	    if (Array.getDouble(selected, i) > highestValue)
+		highestValue = Array.getDouble(selected, i);
+
+	for (int i = 0; i < graph.length; i++) {
+	    graph[i].setColor(color);
+	    graph[i].setWidth(lineWidth);
+	    graph[i].setLine(x + width * i / graph.length, y + height * Array.getDouble(selected, i) / highestValue,
+		    x + width * (i + 1) / graph.length, y + height * Array.getDouble(selected, i + 1) / highestValue);
+	    GLRenderer.getInstance().addRenderElement(graph[i]);
+	}
+    }
+
+    public void remove() {
+	for (int i = 0; i < graph.length; i++) {
+	    if (graph[i] != null)
+		graph[i].remove();
+	}
+    }
+}
+
+/* GL */
