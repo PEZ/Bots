@@ -1,12 +1,17 @@
 package pez.rumble.pmove;
-import pez.rumble.utils.*;
-import robocode.*;
-import robocode.util.Utils;
-import java.util.*;
-import java.util.zip.*;
-import java.io.*;
-import java.awt.geom.*;
-import java.awt.Color; // GL
+import java.awt.geom.Point2D;
+import java.awt.geom.Rectangle2D;
+import java.util.ArrayList;
+import java.util.List;
+
+import pez.rumble.utils.PUtils;
+import pez.rumble.utils.Wave;
+import robocode.AdvancedRobot;
+import robocode.Bullet;
+import robocode.BulletHitBulletEvent;
+import robocode.BulletHitEvent;
+import robocode.HitByBulletEvent;
+import robocode.ScannedRobotEvent;
 
 // Butterfly, a movement by PEZ. For CassiusClay - Float like a butterfly!
 // http://robowiki.net/?CassiusClay
@@ -68,9 +73,11 @@ public class Butterfly {
 		roundsLeft = robot.getNumRounds() - roundNum - 1;
 		roundNum++;
 		bulletsThisRound = 0;
+		/*
 		if (doGL) { // GL
 			WaveGrapher.initDangerGraph(); // GL
 		} // GL
+		*/
 	}
 
 	public void onScannedRobot(ScannedRobotEvent e) {
@@ -98,9 +105,11 @@ public class Butterfly {
 			MovementWave.bullets.add(wave);
 			MovementWave.surfables.add(wave);
 			bulletsThisRound++;
+			/*
 			if (doGL) { // GL
 				wave.grapher = new WaveGrapher(wave); // GL
 			} // GL
+			*/
 		}
 		enemyEnergy = e.getEnergy();
 		double bulletVelocity = PUtils.bulletVelocity(enemyFirePower);
@@ -158,15 +167,6 @@ public class Butterfly {
 
 	public void onHitByBullet(HitByBulletEvent e) {
 		Bullet b = e.getBullet();
-		if (false) {
-			Hit hit = new Hit(b.getPower(), enemyDistance, robotLocation, enemyLocation);
-			MovementWave wave = (MovementWave)Wave.findClosest(MovementWave.bullets, new Point2D.Double(b.getX(), b.getY()), b.getVelocity());
-			if (wave != null) {
-				hit.gf = wave.getGF(new Point2D.Double(b.getX(), b.getY()));
-			}
-			Hit.hits.add(hit);
-			hit.print();
-		}
 		MovementWave.hitsTaken++;
 		if (b.getPower() > 1.2 && enemyDistance > 150) {
 			MovementWave.rangeHits++;
@@ -226,9 +226,11 @@ public class Butterfly {
 		robot.setAhead(PUtils.backAsFrontDirection(newHeading, oldHeading) * 50);
 		robot.setTurnRightRadians(PUtils.backAsFrontTurn(newHeading, oldHeading));
 		robot.setMaxVelocity(wantedVelocity);
+		/*
 		if (doGL) { // GL
 			WaveGrapher.drawDangerGraph(MovementWave.dangerForward, MovementWave.dangerStop, MovementWave.dangerReverse); // GL
 		} // GL
+		*/
 	}
 
 	static Move wallSmoothedDestination(Point2D location, Point2D orbitCenter, double direction) {
@@ -271,25 +273,31 @@ public class Butterfly {
 		return evasion;
 	}
 
-	void updateDirectionStats(List _waves, MovementWave closest) {
+	void updateDirectionStats(List<MovementWave> _waves, MovementWave closest) {
 		Move move = waveImpactLocation(closest, 1.0, MAX_VELOCITY);
 		MovementWave.dangerForward += impactDanger(_waves, move.location);
+		/*
 		if (closest.grapher != null) { // GL
 			closest.grapher.drawForwardDestination(move.location, closest.danger(move.location)); // GL
 		} // GL
+		*/
 		move = waveImpactLocation(closest, -1.0, MAX_VELOCITY);
 		MovementWave.dangerReverse += impactDanger(_waves, move.location);
+		/*
 		if (closest.grapher != null) { // GL
 			closest.grapher.drawReverseDestination(move.location, closest.danger(move.location)); // GL
 		} // GL
+		*/
 		move = waveImpactLocation(closest, 1.0, 0);
 		MovementWave.dangerStop += impactDanger(_waves, move.location);
+		/*
 		if (closest.grapher != null) { // GL
 			closest.grapher.drawStopDestination(move.location, closest.danger(move.location)); // GL
 		} // GL
+		*/
 	}
 
-	double impactDanger(List _waves, Point2D impact) {
+	double impactDanger(List<MovementWave> _waves, Point2D impact) {
 		double danger = 0;
 		for (int i = 0, n = _waves.size(); i < n; i++) {
 			danger += ((MovementWave)_waves.get(i)).danger(impact);
@@ -367,9 +375,9 @@ class MovementWave extends Wave {
 	static double dangerForward;
 	static double dangerReverse;
 	static double dangerStop;
-	static List waves;
-	static List bullets;
-	static List surfables;
+	static List<MovementWave> waves;
+	static List<MovementWave> bullets;
+	static List<MovementWave> surfables;
 	static double hitsTaken;
 
 	long startTime;
@@ -385,7 +393,7 @@ class MovementWave extends Wave {
 	int approachIndex;
 	boolean visitRegistered;
 
-	WaveGrapher grapher; // GL
+	//WaveGrapher grapher; // GL
 
 	static void initStatBuffers() {
 		visitCounts = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][TIMER_INDEXES][WALL_INDEXES][FACTORS];
@@ -408,9 +416,9 @@ class MovementWave extends Wave {
 		if (fastHitCounts == null) {
 			initStatBuffers();
 		}
-		waves = new ArrayList();
-		bullets = new ArrayList();
-		surfables = new ArrayList();
+		waves = new ArrayList<MovementWave>();
+		bullets = new ArrayList<MovementWave>();
+		surfables = new ArrayList<MovementWave>();
 	}
 
 	static void reset() {
@@ -425,7 +433,7 @@ class MovementWave extends Wave {
 	}
 
 	static void updateWaves() {
-		List reap = new ArrayList();
+		List<MovementWave> reap = new ArrayList<MovementWave>();
 		for (int i = 0, n = waves.size(); i < n; i++) {
 			MovementWave wave = (MovementWave)waves.get(i);
 			wave.setDistanceFromGun((robot.getTime() - wave.startTime) * wave.getBulletVelocity());
@@ -437,17 +445,21 @@ class MovementWave extends Wave {
 			}
 			if (wave.passed(wave.getBulletVelocity() * 2)) {
 				surfables.remove(wave);
+				/*
 				if (wave.grapher != null) { // GL
 					wave.grapher.remove(); // GL
 				} // GL
+				*/
 			}
 			if (wave.passed(-15)) {
 				reap.add(wave);
 				bullets.remove(wave);
 			}
+			/*
 			if (wave.grapher != null) { // GL
 				wave.grapher.drawWave(); // GL
 			} // GL
+			*/
 		}
 		for (int i = 0, n = reap.size(); i < n; i++) {
 			waves.remove(reap.get(i));
@@ -578,7 +590,7 @@ class Move {
 }
 
 class Hit {
-	static List hits = new ArrayList();
+	static List<Hit> hits = new ArrayList<Hit>();
 	double bulletPower;
 	int distance;
 	int robotX;
@@ -602,13 +614,14 @@ class Hit {
 
 	static void printAll() {
 		for (int i = 0, n = Hit.hits.size(); i < n; i++) {
-			Hit hit = (Hit)Hit.hits.get(i);
+			Hit hit = Hit.hits.get(i);
 			hit.print();
 		}
 	}
 }
 
 // GL
+/*
 class WaveGrapher{
 	static GLRenderer renderer = GLRenderer.getInstance();
 	static int counter = 0;
@@ -712,4 +725,5 @@ class WaveGrapher{
 		return true;
 	}
 }
+*/
 // GL
