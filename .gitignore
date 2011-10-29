@@ -4,6 +4,9 @@
 *.jar
 *.war
 *.ear
+*.zip
+*.gz
+*.tgz
 
 ## generic files to ignore
 *~
@@ -14,3 +17,4 @@
 
 #eclipse stuff
 .metadata
+/.classpath

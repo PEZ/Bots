@@ -1,16 +1,17 @@
 package pez.micro;
-import robocode.*;
-import robocode.util.Utils;
 import java.awt.Color;
-import java.awt.geom.*;
-import java.util.*;
-import java.io.*;
+import java.awt.geom.Point2D;
+
+import robocode.AdvancedRobot;
+import robocode.Bullet;
+import robocode.Condition;
+import robocode.ScannedRobotEvent;
+import robocode.util.Utils;
 
 // VertiLeech, by PEZ. Stays close to you and follows your vertical movements
 // $Id: VertiLeach.java,v 1.3 2003/09/28 11:17:51 peter Exp $
 
 public class VertiMicro extends AdvancedRobot {
-    private static final int DIRECTION_SEGMENTS = 3;
     private static final int VERTICAL_SEGMENTS = 7;
     private static final int DISTANCE_SEGMENTS = 5;
     private static final int AIM_FACTORS = 17;
