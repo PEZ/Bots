@@ -30,10 +30,10 @@ public class WaveGrapher{
 	public WaveGrapher(MovementWave wave) {
 		this.id = "" + counter++;
 		this.wave = wave;
-		this.dots = new GPoint[MovementWave.FACTORS];
+		this.dots = new GPoint[MovementWave.getFactors()];
 		for (int i = 0; i < dots.length; i++) {
 			dots[i] = new GPoint();
-			if (i == MovementWave.MIDDLE_FACTOR) {
+			if (i == MovementWave.getMiddleFactor()) {
 				dots[i].addLabel(new GLabel(id));
 			}
 			renderer.addRenderElement(dots[i]);
@@ -62,7 +62,7 @@ public class WaveGrapher{
 	public void drawWave() {
 		for (int i = 0; i < dots.length; i++) {
 			Point2D dot = PUtils.project(wave.getGunLocation(),
-					wave.getStartBearing() + wave.getOrbitDirection() * (i - MovementWave.MIDDLE_FACTOR),
+					wave.getStartBearing() + wave.getOrbitDirection() * (i - MovementWave.getMiddleFactor()),
 					wave.distanceFromGun());
 			dots[i].setPosition((float)dot.getX(), (float)dot.getY());
 			dots[i].setFillColor(Color.BLUE);

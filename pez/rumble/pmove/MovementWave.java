@@ -11,9 +11,9 @@ import robocode.AdvancedRobot;
 import robocode.Bullet;
 
 public class MovementWave extends Wave {
-	public static final int FACTORS = 31;
+	private static final int FACTORS = 31;
 	static final int ACCEL_INDEXES = 3;
-	public static final int MIDDLE_FACTOR = (FACTORS - 1) / 2;
+	private static final int MIDDLE_FACTOR = (getFactors() - 1) / 2;
 	static final double[] APPROACH_SLICES = { -3, 1, 3};
 	static final double[] DISTANCE_SLICES = { 300, 450, 550, 650 };
 	static final double[] VELOCITY_SLICES = { 1, 3, 5, 7 };
@@ -29,6 +29,15 @@ public class MovementWave extends Wave {
 
 	static float[][][][][][] visitCounts;
 	static float[] visitCountsFast;
+	static float[][][][][] visitCountsTimerWalls;
+	static float[][][][][] visitCountsTimer;
+	static float[][][][][] visitCountsDistanceVelocityWalls;
+	static float[][][][] visitCountsWalls;
+	static float[][][][] visitCountsDVA;
+	static float[][][] visitCountsVelocityAccel;
+	static float[][][] visitCountsVelocityApproach;
+	static float[][][] visitCountsDistanceVelocity;
+	static float[][] visitCountsVelocity;
 	static float[][][][][] hitCountsTimerWalls;
 	static float[][][][][] hitCountsTimer;
 	static float[][][][][] hitCountsDistanceVelocityWalls;
@@ -50,6 +59,7 @@ public class MovementWave extends Wave {
 	static List<MovementWave> surfables;
 	static double hitsTaken;
 
+	boolean isSurfable;
 	long startTime;
 	Butterfly floater;
 	double bulletPower;
@@ -66,20 +76,29 @@ public class MovementWave extends Wave {
 	WaveGrapher grapher; // GL
 
 	static void initStatBuffers() {
-		visitCounts = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][TIMER_INDEXES][WALL_INDEXES][FACTORS];
-		visitCountsFast = new float[FACTORS];
-		hitCountsTimerWalls = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][TIMER_INDEXES][WALL_INDEXES][FACTORS];
-		hitCountsTimer = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][TIMER_INDEXES][FACTORS];
-		hitCountsDistanceVelocityWalls = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][WALL_INDEXES][FACTORS];
-		hitCountsDVA = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][FACTORS];
-		hitCountsWalls = new float[VELOCITY_INDEXES][ACCEL_INDEXES][WALL_INDEXES][FACTORS];
-		hitCountsVelocityAccel = new float[VELOCITY_INDEXES][ACCEL_INDEXES][FACTORS];
-		hitCountsVelocityApproach = new float[VELOCITY_INDEXES][APPROACH_INDEXES][FACTORS];
-		hitCountsDistanceVelocity = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][FACTORS];
-		hitCountsVelocity = new float[VELOCITY_INDEXES][FACTORS];
-		fastHitCounts = new float[FACTORS];
-		fastHitCounts[MIDDLE_FACTOR] = 50;
-		randomCounts = new float[FACTORS];
+		visitCounts = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][TIMER_INDEXES][WALL_INDEXES][getFactors()];
+		visitCountsTimerWalls = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][TIMER_INDEXES][WALL_INDEXES][getFactors()];
+		visitCountsTimer = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][TIMER_INDEXES][getFactors()];
+		visitCountsDistanceVelocityWalls = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][WALL_INDEXES][getFactors()];
+		visitCountsDVA = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][getFactors()];
+		visitCountsWalls = new float[VELOCITY_INDEXES][ACCEL_INDEXES][WALL_INDEXES][getFactors()];
+		visitCountsVelocityAccel = new float[VELOCITY_INDEXES][ACCEL_INDEXES][getFactors()];
+		visitCountsVelocityApproach = new float[VELOCITY_INDEXES][APPROACH_INDEXES][getFactors()];
+		visitCountsDistanceVelocity = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][getFactors()];
+		visitCountsVelocity = new float[VELOCITY_INDEXES][getFactors()];
+		visitCountsFast = new float[getFactors()];
+		hitCountsTimerWalls = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][TIMER_INDEXES][WALL_INDEXES][getFactors()];
+		hitCountsTimer = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][TIMER_INDEXES][getFactors()];
+		hitCountsDistanceVelocityWalls = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][WALL_INDEXES][getFactors()];
+		hitCountsDVA = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][getFactors()];
+		hitCountsWalls = new float[VELOCITY_INDEXES][ACCEL_INDEXES][WALL_INDEXES][getFactors()];
+		hitCountsVelocityAccel = new float[VELOCITY_INDEXES][ACCEL_INDEXES][getFactors()];
+		hitCountsVelocityApproach = new float[VELOCITY_INDEXES][APPROACH_INDEXES][getFactors()];
+		hitCountsDistanceVelocity = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][getFactors()];
+		hitCountsVelocity = new float[VELOCITY_INDEXES][getFactors()];
+		fastHitCounts = new float[getFactors()];
+		fastHitCounts[getMiddleFactor()] = 50;
+		randomCounts = new float[getFactors()];
 	}
 
 	static void init() {
@@ -98,18 +117,23 @@ public class MovementWave extends Wave {
 	}
 
 	public MovementWave(AdvancedRobot robot, Butterfly floater) {
-		init(robot, FACTORS);
+		init(robot, getFactors());
 		this.floater = floater;
 	}
 
-	static void updateWaves() {
+	static void updateWaves(AdvancedRobot robot) {
 		List<MovementWave> reap = new ArrayList<MovementWave>();
 		for (int i = 0, n = waves.size(); i < n; i++) {
 			MovementWave wave = (MovementWave)waves.get(i);
 			wave.setDistanceFromGun((robot.getTime() - wave.startTime) * wave.getBulletVelocity());
 			if (wave.passed(10)) {
 				if (!wave.visitRegistered) {
-					wave.registerVisit();
+					if (wave.isSurfable) {
+						wave.registerVisit(100, 80);
+					}
+					else {
+						wave.registerVisit(50, 100);						
+					}
 					wave.visitRegistered = true;
 				}
 			}
@@ -129,16 +153,38 @@ public class MovementWave extends Wave {
 		}
 		for (int i = 0, n = reap.size(); i < n; i++) {
 			waves.remove(reap.get(i));
+			if (reap.get(i).grapher != null) { // GL
+				reap.get(i).grapher.remove(); // GL
+			} // GL
+
 		}
 	}
 
-	void registerVisit() {
+	void registerVisit(double weight, double depth) {
 		int index = visitingIndex();
 		float[] visits = visitCounts[distanceIndex][velocityIndex][accelIndex][vChangeIndex][wallIndex];
 		float[] visitsFast = visitCountsFast;
-		registerHit(visits, index, PUtils.minMax(Math.pow(hitRate() * 2.1, 2), 0, 75), 500.0);
-		registerHit(visitsFast, index, PUtils.minMax(Math.pow(hitRate() * 2.1, 2), 0, 75), 500.0);
-		registerHit(randomCounts, (int)(Math.random() * (FACTORS - 1) + 1), PUtils.minMax(Math.pow(hitRate() * 2.1, 2), 0, 60), 10.0);
+		float[] visitsTimerWalls = visitCountsTimerWalls[distanceIndex][velocityIndex][vChangeIndex][wallIndex];
+		float[] visitsTimer = visitCountsTimer[distanceIndex][velocityIndex][accelIndex][vChangeIndex];
+		float[] visitsDistanceVelocityWalls = visitCountsDistanceVelocityWalls[distanceIndex][velocityIndex][accelIndex][wallIndex];
+		float[] visitsWalls = visitCountsWalls[velocityIndex][accelIndex][wallIndex];
+		float[] visitsDVA = visitCountsDVA[distanceIndex][velocityIndex][accelIndex];
+		float[] visitsVelocityAccel = visitCountsVelocityAccel[velocityIndex][accelIndex];
+		float[] visitsVelocityApproach = visitCountsVelocityApproach[velocityIndex][approachIndex];
+		float[] visitsDistanceVelocity = visitCountsDistanceVelocity[distanceIndex][velocityIndex];
+		float[] visitsVelocity = visitCountsVelocity[velocityIndex];
+		registerHit(visits, index, 100.0, 1000.0);
+		registerHit(visitsFast, index, 100.0, 1000.0);
+		registerHit(visitsTimerWalls, index, 100.0, 1000.0);
+		registerHit(visitsTimer, index, 100.0, 1000.0);
+		registerHit(visitsDistanceVelocityWalls, index, 100.0, 1000.0);
+		registerHit(visitsWalls, index, 100.0, 1000.0);
+		registerHit(visitsDVA, index, 100.0, 1000.0);
+		registerHit(visitsVelocityAccel, index, 100.0, 1000.0);
+		registerHit(visitsVelocityApproach, index, 100.0, 1000.0);
+		registerHit(visitsDistanceVelocity, index, 100.0, 1000.0);
+		registerHit(visitsVelocity, index, 100.0, 1000.0);
+		registerHit(randomCounts, (int)(Math.random() * (getFactors() - 1) + 1), PUtils.minMax(Math.pow(hitRate() * 2.1, 2), 0, 60), 10.0);
 	}
 
 	static void registerHit(Bullet bullet) {
@@ -158,7 +204,7 @@ public class MovementWave extends Wave {
 	}
 
 	void registerHit(float[] buffer, int index, double weight, double depth) {
-		for (int i = 0; i < FACTORS; i++) {
+		for (int i = 0; i < getFactors(); i++) {
 			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], index == i ? weight : 0.0, depth);
 		}
 	}
@@ -174,16 +220,16 @@ public class MovementWave extends Wave {
 		float[] hitsDistanceVelocity = hitCountsDistanceVelocity[distanceIndex][velocityIndex];
 		float[] hitsVelocity = hitCountsVelocity[velocityIndex];
 		float[] fastHits = fastHitCounts;
-		registerHit(hitsTimerWalls, index, 100.0, 1.0);
-		registerHit(hitsTimer, index, 100.0, 1.0);
-		registerHit(hitsDistanceVelocityWalls, index, 100.0, 1.0);
-		registerHit(hitsWalls, index, 90.0, 1.0);
-		registerHit(hitsDVA, index, 90.0, 1.0);
-		registerHit(hitsVelocityAccel, index, 80.0, 1.0);
-		registerHit(hitsVelocityApproach, index, 80.0, 1.0);
-		registerHit(hitsDistanceVelocity, index, 80.0, 1.0);
-		registerHit(hitsVelocity, index, 75.0, 1.0);
-		registerHit(fastHits, index, 50.0, 1.0);
+		registerHit(hitsTimerWalls, index, 103.0, 1.0);
+		registerHit(hitsTimer, index, 103.0, 1.0);
+		registerHit(hitsDistanceVelocityWalls, index, 103.0, 1.0);
+		registerHit(hitsWalls, index, 103.0, 1.0);
+		registerHit(hitsDVA, index, 103.0, 1.0);
+		registerHit(hitsVelocityAccel, index, 103.0, 1.0);
+		registerHit(hitsVelocityApproach, index, 103.0, 1.0);
+		registerHit(hitsDistanceVelocity, index, 103.0, 1.0);
+		registerHit(hitsVelocity, index, 103.0, 1.0);
+		registerHit(fastHits, index, 103.0, 1.0);
 	}
 
 	double danger(Point2D destination) {
@@ -197,6 +243,15 @@ public class MovementWave extends Wave {
 	public double dangerUnWeighed(int index) {
 		float[] visits = visitCounts[distanceIndex][velocityIndex][accelIndex][vChangeIndex][wallIndex];
 		float[] visitsFast = visitCountsFast;
+		float[] visitsTimerWalls = visitCountsTimerWalls[distanceIndex][velocityIndex][vChangeIndex][wallIndex];
+		float[] visitsTimer = visitCountsTimer[distanceIndex][velocityIndex][accelIndex][vChangeIndex];
+		float[] visitsDistanceVelocityWalls = visitCountsDistanceVelocityWalls[distanceIndex][velocityIndex][accelIndex][wallIndex];
+		float[] visitsWalls = visitCountsWalls[velocityIndex][accelIndex][wallIndex];
+		float[] visitsDVA = visitCountsDVA[distanceIndex][velocityIndex][accelIndex];
+		float[] visitsVelocityAccel = visitCountsVelocityAccel[velocityIndex][accelIndex];
+		float[] visitsVelocityApproach = visitCountsVelocityApproach[velocityIndex][approachIndex];
+		float[] visitsDistanceVelocity = visitCountsDistanceVelocity[distanceIndex][velocityIndex];
+		float[] visitsVelocity = visitCountsVelocity[velocityIndex];
 		float[] hitsTimerWalls = hitCountsTimerWalls[distanceIndex][velocityIndex][vChangeIndex][wallIndex];
 		float[] hitsTimer = hitCountsTimer[distanceIndex][velocityIndex][accelIndex][vChangeIndex];
 		float[] hitsDistanceVelocityWalls = hitCountsDistanceVelocityWalls[distanceIndex][velocityIndex][accelIndex][wallIndex];
@@ -208,8 +263,10 @@ public class MovementWave extends Wave {
 		float[] hitsVelocity = hitCountsVelocity[velocityIndex];
 		float[] fastHits = fastHitCounts;
 		double danger = 0;
-		for (int i = 1; i < FACTORS; i++) {
-			danger += ((hitRate() > 2.0 ? visitsFast[i] + visits[i] + hitRate() > 3.0 ? randomCounts[i] : 0 : 0) + hitsTimerWalls[i] + hitsTimer[i] + hitsDistanceVelocityWalls[i] + hitsWalls[i] + hitsDistanceVelocity[i] + hitsVelocityAccel[i] + hitsVelocityApproach[i] + hitsDVA[i] + hitsVelocity[i] + fastHits[i]) / roots[Math.abs(index - i)];
+		for (int i = 1; i < getFactors(); i++) {
+			danger += ((hitRate() > 0.0 ? visitsFast[i] + visits[i] + visitsTimerWalls[i] + visitsTimer[i] + visitsDistanceVelocityWalls[i] + visitsWalls[i] + visitsDistanceVelocity[i] + visitsVelocityAccel[i] + visitsVelocityApproach[i] + visitsDVA[i] + visitsVelocity[i] : 0) +
+					hitsTimerWalls[i] + hitsTimer[i] + hitsDistanceVelocityWalls[i] + hitsWalls[i] + hitsDistanceVelocity[i] + hitsVelocityAccel[i] + hitsVelocityApproach[i] + hitsDVA[i] + hitsVelocity[i] + fastHits[i]) / roots[Math.abs(index - i)];
+			//danger += ((isHighHitRate() ? visitsFast[i] + visits[i] + hitsTimerWalls[i] + hitsTimer[i] + hitsDistanceVelocityWalls[i] + hitsVelocityApproach[i] : 0) + hitsDVA[i] + hitsWalls[i] + hitsDistanceVelocity[i] + hitsVelocityAccel[i] + hitsVelocity[i] + fastHits[i]) / roots[Math.abs(index - i)];
 		}
 		return danger;
 	}
@@ -219,11 +276,23 @@ public class MovementWave extends Wave {
 		return bulletPower / t;
 	}
 
+	static boolean isHighHitRate() {
+		return Butterfly.roundNum > 5 && hitRate() > 2.0;
+	}
+
 	static boolean isLowHitRate() {
 		return hitRate() < 1.0;
 	}
 
 	static double hitRate() {
 		return rangeHits / (Butterfly.roundNum + 1);
+	}
+
+	public static int getMiddleFactor() {
+		return MIDDLE_FACTOR;
+	}
+
+	public static int getFactors() {
+		return FACTORS;
 	}
 }

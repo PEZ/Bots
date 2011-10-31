@@ -7,7 +7,7 @@ package pez.rumble.utils;
 // http://robowiki.net/?RWPCL
 // (Basically it means you must keep the code public if you use it in any way.)
 //
-// $Id:  Exp $
+// $Id: MovementVector.java,v 1.1.1.1 2006/02/02 00:08:29 peter Exp $
 
 public final class MovementVector {
     public double h;

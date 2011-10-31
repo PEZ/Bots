@@ -7,525 +7,530 @@ import java.util.*;
 import java.util.zip.*;
 import java.awt.geom.*;
 
-// Bee, a gun by PEZ. For CassiusClay - Sting like a bee!
-// http://robowiki.net/?CassiusClay
-//
-// This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
-// http://robowiki.net/?RWPCL
-// (Basically it means you must keep the code public.)
-//
-// $Id: Bee.java,v 1.19 2004/09/22 21:16:25 peter Exp $
+//Bee, a gun by PEZ. For CassiusClay - Sting like a bee!
+//http://robowiki.net/?CassiusClay
 
-public class Bee {
-    public static boolean isTC = false; // TargetingChallenge
+//This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
+//http://robowiki.net/?RWPCL
+//(Basically it means you must keep the code public.)
 
-    static final double WALL_MARGIN = 18;
-    static final double MAX_BULLET_POWER = 3.0;
-    static final double BULLET_POWER = 1.9;
+//$Id: Bee.java,v 1.27 2007-02-27 05:49:05 peters Exp $
 
-    static double roundNum;
-    static Rectangle2D fieldRectangle;
+public class Bee extends Stinger {
+	static final double WALL_MARGIN = 18;
+	static final double MAX_BULLET_POWER = 3.0;
+	static final double BULLET_POWER = 1.9;
 
-    static String enemyName = "";
+	Point2D enemyLocation = new Point2D.Double();
+	double lastVelocity;
+	double timeSinceAccel;
+	double timeSinceDeccel;
+	double lastBearingDirection;
+	double distance;
+	long lastScanTime;
+	BeeWave lastWave;
 
-    Point2D enemyLocation = new Point2D.Double();
-    double lastVelocity;
-    double timeSinceAccel;
-    double timeSinceDeccel;
-    double lastBearingDirection;
-    double distance;
-    long lastScanTime;
-    AdvancedRobot robot;
-    RobotPredictor robotPredictor;
-
-    public Bee(AdvancedRobot robot, RobotPredictor robotPredictor) {
-	this.robot = robot;
-	this.robotPredictor = robotPredictor;
-	fieldRectangle = PUtils.fieldRectangle(robot, WALL_MARGIN);
-    }
-
-    public void onScannedRobot(ScannedRobotEvent e) {
-	if (enemyName == "") {
-	    enemyName = e.getName();
-	}
-	if (lastScanTime == 0) {
-	    GunWave.initRound();
-	    System.out.println("range hits given: " + (int)GunWave.rangeHits + " (average / round: " + java.text.NumberFormat.getNumberInstance().format(GunWave.hitRate()) + ")");
-	    System.out.println(GunWave.guessors.toString());
-	    System.out.println("Using: " + GunWave.currentGuessor.echoStats());
-	    roundNum++;
+	public Bee(AdvancedRobot robot, RobotPredictor robotPredictor) {
+		super(robot, robotPredictor);
 	}
 
-	if (robot.getTime() > lastScanTime) {
-	    GunWave wave = new GunWave(robot);
-	    Point2D robotLocation = new Point2D.Double(robot.getX(), robot.getY());
-	    double bearing = robot.getHeadingRadians() + e.getBearingRadians();
-	    distance = e.getDistance();
-	    wave.distance = distance;
-	    enemyLocation.setLocation(PUtils.project(robotLocation, bearing, distance));
-	    double bulletPower = bulletPower(distance, e.getEnergy(), robot.getEnergy());
-	    wave.bulletPower = bulletPower;
-	    double lateralVelocity = e.getVelocity() * Math.sin(e.getHeadingRadians() - bearing);
-	    wave.absV = Math.abs(e.getVelocity());
-	    wave.absLatV = Math.abs(lateralVelocity);
-	    double acceleration = wave.absV - Math.abs(lastVelocity);
+	void scannedRobot(ScannedRobotEvent e) {
+		BeeWave wave = new BeeWave(robot);
+		Point2D robotLocation = new Point2D.Double(robot.getX(), robot.getY());
+		double bearing = robot.getHeadingRadians() + e.getBearingRadians();
+		distance = e.getDistance();
+		wave.distance = distance;
+		enemyLocation.setLocation(PUtils.project(robotLocation, bearing, distance));
+		double bulletPower = bulletPower(distance, e.getEnergy(), robot.getEnergy());
+		wave.bulletPower = bulletPower;
+		double lateralVelocity = e.getVelocity() * Math.sin(e.getHeadingRadians() - bearing);
+		wave.absV = Math.abs(e.getVelocity());
+		wave.absLatV = Math.abs(lateralVelocity);
+		double acceleration = wave.absV - Math.abs(lastVelocity);
 
-	    timeSinceAccel++;
-	    timeSinceDeccel++;
-	    if (acceleration > 0.5) {
-		timeSinceAccel = 0;
-	    }
-	    if (acceleration < -0.5) {
-		timeSinceDeccel = 0;
-	    }
-	    wave.timeSinceVChange = Math.min(timeSinceAccel, timeSinceDeccel);
-	    wave.timeSinceAccel = timeSinceAccel;
-	    wave.timeSinceDeccel = timeSinceDeccel;
-
-	    wave.setStartTime(robot.getTime());
-	    wave.setBulletVelocity(PUtils.bulletVelocity(bulletPower));
-	    wave.setGunLocation(robotLocation);
-	    wave.setStartBearing(bearing);
-	    wave.setTargetLocation(enemyLocation);
-	    if (wave.absV > 0) {
-		lastBearingDirection = wave.maxEscapeAngle() * PUtils.sign(lateralVelocity);
-	    }
-	    double orbitDirection = lastBearingDirection / (double)GunWave.MIDDLE_BIN;
-	    wave.setOrbitDirection(orbitDirection);
-
-	    wave.wallDistance = wave.wallDistance(1, fieldRectangle);
-	    wave.reverseWallDistance = wave.wallDistance(-1, fieldRectangle);
-
-	    wave.setSegmentation();
-
-	    if (robot.getOthers() > 0 && lastBearingDirection != 0) {
-		GunWave.waves.add(wave);
-	    }
-	    GunWave.updateWaves();
-
-	    Point2D nextRobotLocation = robotPredictor.getNextLocation(robot);
-	    Point2D nextEnemyLocation = PUtils.project(enemyLocation, e.getHeadingRadians(), e.getVelocity());
-	    double nextBearing = PUtils.absoluteBearing(nextRobotLocation, nextEnemyLocation);
-	    double guessedBearing = nextBearing + orbitDirection * (wave.mostVisited() - GunWave.MIDDLE_BIN);
-	    robot.setTurnGunRightRadians(Utils.normalRelativeAngle(guessedBearing - robot.getGunHeadingRadians()));
-	    if (isTC || (robot.getEnergy() >= 0.3 || e.getEnergy() < robot.getEnergy() / 5 || distance < 120)) {
-		if (Math.abs(robot.getGunTurnRemainingRadians()) < PUtils.botWidthAngle(distance) / 2 && robot.setFireBullet(bulletPower) != null) {
-		    wave.weight = 5;
-		    GunWave.bullets.add(wave);
-		    wave.currentGuessor().registerFire();
+		timeSinceAccel++;
+		timeSinceDeccel++;
+		if (acceleration > 0.5) {
+			timeSinceAccel = 0;
 		}
-	    }
+		if (acceleration < -0.5) {
+			timeSinceDeccel = 0;
+		}
+		wave.timeSinceVChange = Math.min(timeSinceAccel, timeSinceDeccel);
+		wave.timeSinceAccel = timeSinceAccel;
+		wave.timeSinceDeccel = timeSinceDeccel;
 
-	    lastVelocity = e.getVelocity();
-	    lastScanTime = robot.getTime();
-	}
-    }
+		wave.setStartTime(robot.getTime() + 1);
+		wave.setBulletVelocity(PUtils.bulletVelocity(bulletPower));
+		Point2D nextRobotLocation = robotPredictor.getNextLocation(robot);
+		Point2D nextEnemyLocation = PUtils.project(enemyLocation, e.getHeadingRadians(), e.getVelocity());
+		double nextBearing = PUtils.absoluteBearing(nextRobotLocation, nextEnemyLocation);
+		wave.setGunLocation(nextRobotLocation);
+		wave.setStartBearing(nextBearing);
+		if (lastWave != null) {
+			lastWave.setStartBearing(PUtils.absoluteBearing(robotLocation, enemyLocation));
+			lastWave.setGunLocation(robotLocation);
+		}
+		wave.setTargetLocation(enemyLocation);
+		if (wave.absV > 0) {
+			lastBearingDirection = wave.maxEscapeAngle() * PUtils.sign(lateralVelocity);
+		}
+		double orbitDirection = lastBearingDirection / (double)BeeWave.MIDDLE_BIN;
+		wave.setOrbitDirection(orbitDirection);
 
-    public void onBulletHit(BulletHitEvent e) {
-	if (distance > 150 && e.getBullet().getPower() > 1.2) {
-	    GunWave.rangeHits++;
-	}
-	Bullet b = e.getBullet();
-	GunWave wave = (GunWave)Wave.findClosest(GunWave.bullets, new Point2D.Double(b.getX(), b.getY()), b.getVelocity());
-	if (wave != null) {
-	    wave.currentGuessor().registerHit(b.getPower(), distance);
-	}
-    }
+		wave.wallDistance = wave.wallDistance(1, fieldRectangle);
+		wave.reverseWallDistance = wave.wallDistance(-1, fieldRectangle);
 
-    public void roundOver() {
-	if (PUtils.isLastRound(robot)) {
-	    if (!isTC) {
-		GunWave.saveStats();
-	    }
-	    System.out.println("Bzzz bzzz. Over and out!");
-	}
-    }
+		wave.setSegmentation();
 
-    double bulletPower(double distance, double eEnergy, double rEnergy) {
-	double wantedBulletPower = (isTC || distance < 130) ? MAX_BULLET_POWER : BULLET_POWER;
-	double bulletPower = wantedBulletPower;
-	if (!isTC) {
-	    bulletPower = Math.min(Math.min(eEnergy / 4, rEnergy / (distance >= 130 ? 5 : 1)), wantedBulletPower);
+		if (robot.getOthers() > 0 && lastBearingDirection != 0) {
+			BeeWave.waves.add(wave);
+		}
+		BeeWave.updateWaves();
+
+		double guessedBearing = nextBearing + orbitDirection * (wave.mostVisited() - BeeWave.MIDDLE_BIN);
+		robot.setTurnGunRightRadians(Utils.normalRelativeAngle(guessedBearing - robot.getGunHeadingRadians()));
+		if (isTC || (robot.getEnergy() >= 0.3 || e.getEnergy() < robot.getEnergy() / 5 || distance < 120)) {
+			if (Math.abs(robot.getGunTurnRemainingRadians()) < PUtils.botWidthAngle(distance) / 2 && robot.setFireBullet(bulletPower) != null && lastWave != null) {
+					lastWave.weight = 5;
+					BeeWave.bullets.add(lastWave);
+					lastWave.currentGuessor().registerFire();
+			}
+		}
+		lastVelocity = e.getVelocity();
+		lastWave = wave;
+	}
+	
+	void initRound() {
+		BeeWave.initRound(robot);
+		System.out.println(BeeWave.guessors.toString());
+		System.out.println("Using: " + BeeWave.currentGuessor.echoStats());
 	}
 
-	return bulletPower;
-    }
+	void saveStats() {
+		BeeWave.saveStats(robot);
+	}
+	
+	
+	public void roundOver() {
+		if (PUtils.isLastRound(robot)) {
+			if (!isTC) {
+				saveStats();
+			}
+			System.out.println("Bzzz bzzz. Over and out!");
+		}
+	}
+
+	void bulletHit(BulletHitEvent e) {
+		Bullet b = e.getBullet();
+		BeeWave wave = (BeeWave)Wave.findClosest(BeeWave.bullets, new Point2D.Double(b.getX(), b.getY()), b.getVelocity());
+		if (wave != null) {
+			wave.currentGuessor().registerHit(b.getPower(), distance);
+			BeeWave.BeeReplacor.registerHit(wave);
+		}
+	}
 }
 
-class GunWave extends Wave {
-    static final int BINS = 47;
-    static final int MIDDLE_BIN = (BINS - 1) / 2;
+class BeeWave extends GunWave {
+	static final int BINS = 75;
+	static final int MIDDLE_BIN = (BINS - 1) / 2;
 
-    static List waves;
-    static List bullets;
-    static double rangeHits;
-    
-    static AccumulatingGuessor accumulator;
-    static ReplacingGuessor replacor;
-    static List guessors;
-    static Guessor currentGuessor;
-    Map guesses = new HashMap();
+	static List<BeeWave> waves;
+	static List<BeeWave> bullets;
 
-    double bulletPower;
-    double timeSinceAccel;
-    double timeSinceDeccel;
-    double distance;
-    double absLatV;
-    double absV;
-    double timeSinceVChange;
-    double wallDistance;
-    double reverseWallDistance;
-    int accelSegment;
-    int distanceSegment;
-    int distanceSegmentFaster;
-    int velocitySegment;
-    int velocitySegmentFaster;
-    int vChangeSegment;
-    int vChangeSegmentFaster;
-    int reverseWallSegment;
-    int wallSegment;
-    int wallSegmentFaster;
-    double weight = 1;
+	static BeeAccumulator BeeAccumulator;
+	static BeeReplacor BeeReplacor;
+	static List<Guessor> guessors;
+	static Guessor currentGuessor;
+	Map<Guessor, Integer> guesses = new HashMap<Guessor, Integer>();
 
-    static void initRound() {
-	waves = new ArrayList();
-	bullets = new ArrayList();
-	if (guessors == null) {
-	    readStats();
-	}
-	for (int i = 0, n = guessors.size(); i < n; i++) {
-	    ((Guessor)guessors.get(i)).rounds++;
-	}
-	if (false && accumulator.rounds < 8) {
-	    currentGuessor = (Guessor)guessors.get((int)(Bee.roundNum) % guessors.size());
-	}
-	else {
-	    if (Bee.isTC && hitRate() > 6.5 || !Bee.isTC && hitRate() > 5.5) {
-		currentGuessor = accumulator;
-	    }
-	    else {
+	double bulletPower;
+	double timeSinceAccel;
+	double timeSinceDeccel;
+	double distance;
+	double absLatV;
+	double absV;
+	double timeSinceVChange;
+	double wallDistance;
+	double reverseWallDistance;
+	int accelSegment;
+	int distanceSegment;
+	int distanceSegmentFaster;
+	int velocitySegment;
+	int velocitySegmentFaster;
+	int vChangeSegment;
+	int vChangeSegmentFaster;
+	int reverseWallSegment;
+	int wallSegment;
+	int wallSegmentFaster;
+	double weight = 1;
+
+	static void initRound(AdvancedRobot robot) {
+		waves = new ArrayList<BeeWave>();
+		bullets = new ArrayList<BeeWave>();
+		if (guessors == null) {
+			readStats(robot);
+		}
+		for (int i = 0, n = guessors.size(); i < n; i++) {
+			((Guessor)guessors.get(i)).rounds++;
+		}
+		if (BeeAccumulator.rounds > Guessor.RATING_UPDATE_START && BeeAccumulator.rounds <= Guessor.RATING_UPDATE_STOP &&  BeeAccumulator.rounds % Guessor.RATING_UPDATE_ROUNDS == 0) {
+			if (BeeAccumulator.vRating() > Guessor.BeeAccumulator_REWARD_TRIGGER_VRATING) {
+				BeeAccumulator.incrementRating();
+			}
+			Collections.sort(guessors, Guessor.getVirtualStatsComparator());
+			double firstVR = ((Guessor)guessors.get(0)).vRating();
+			double secondVR = ((Guessor)guessors.get(1)).vRating();
+			double vDiff =  firstVR - secondVR;
+			double vDiffSize = vDiff / (firstVR + secondVR);
+			if (vDiffSize > Guessor.RATING_INCREMENT_THRESHOLD) {
+				((Guessor)guessors.get(0)).incrementRating();
+			}
+		}
 		Collections.sort(guessors);
 		currentGuessor = (Guessor)guessors.get(0);
-	    }
 	}
-	currentGuessor.roundsUsed++;
-    }
 
-    public GunWave(AdvancedRobot robot) {
-	init(robot, BINS);
-    }
+	public BeeWave(AdvancedRobot robot) {
+		init(robot, BINS);
+	}
 
-    void setSegmentation() {
-	accelSegment = timeSinceAccel == 0 ? 0 : timeSinceDeccel == 0 ? 1 : 2;
-	distanceSegment = PUtils.index(Guessor.DISTANCE_SLICES, distance);
-	distanceSegmentFaster = PUtils.index(Guessor.DISTANCE_SLICES_FASTER, distance);
-	velocitySegment =  PUtils.index(Guessor.VELOCITY_SLICES, absLatV);
-	velocitySegmentFaster =  PUtils.index(Guessor.VELOCITY_SLICES_FASTER, absV);
-	vChangeSegment = PUtils.index(Guessor.TIMER_SLICES, timeSinceVChange / travelTime());
-	vChangeSegmentFaster = PUtils.index(Guessor.TIMER_SLICES_FASTER, timeSinceVChange / travelTime());
-	wallSegment = PUtils.index(Guessor.WALL_SLICES, wallDistance);
-	wallSegmentFaster = PUtils.index(Guessor.WALL_SLICES_FASTER, wallDistance);
-	reverseWallSegment = PUtils.index(Guessor.WALL_SLICES_REVERSE, reverseWallDistance);
-    }
+	void setSegmentation() {
+		accelSegment = timeSinceAccel == 0 ? 0 : timeSinceDeccel == 0 ? 1 : 2;
+		distanceSegment = PUtils.index(Guessor.DISTANCE_SLICES, distance);
+		distanceSegmentFaster = PUtils.index(Guessor.DISTANCE_SLICES_FASTER, distance);
+		velocitySegment =  PUtils.index(Guessor.VELOCITY_SLICES, absLatV);
+		velocitySegmentFaster =  PUtils.index(Guessor.VELOCITY_SLICES_FASTER, absV);
+		vChangeSegment = PUtils.index(Guessor.TIMER_SLICES, timeSinceVChange / travelTime());
+		vChangeSegmentFaster = PUtils.index(Guessor.TIMER_SLICES_FASTER, timeSinceVChange / travelTime());
+		wallSegment = PUtils.index(Guessor.WALL_SLICES, wallDistance);
+		wallSegmentFaster = PUtils.index(Guessor.WALL_SLICES_FASTER, wallDistance);
+		reverseWallSegment = PUtils.index(Guessor.WALL_SLICES_REVERSE, reverseWallDistance);
+	}
 
-    static void updateWaves() {
-	List reap = new ArrayList();
-	for (int i = 0, n = waves.size(); i < n; i++) {
-	    GunWave wave = (GunWave)waves.get(i);
-	    wave.setDistanceFromGun((robot.getTime() - wave.getStartTime()) * wave.getBulletVelocity());
-	    if (wave.passed(18)) {
-		if (wave.getRobot().getOthers() > 0) {
-		    wave.registerVisit();
+	static void updateWaves() {
+		List<BeeWave> reap = new ArrayList<BeeWave>();
+		for (int i = 0, n = waves.size(); i < n; i++) {
+			BeeWave wave = (BeeWave)waves.get(i);
+			wave.setDistanceFromGun((wave.robot.getTime() - wave.getStartTime()) * wave.getBulletVelocity());
+			if (wave.passed(1.5 * wave.getBulletVelocity())) {
+				if (wave.getRobot().getOthers() > 0) {
+					wave.registerVisit();
+				}
+				reap.add(wave);
+				bullets.remove(wave);
+			}
 		}
-		reap.add(wave);
-		bullets.remove(wave);
-	    }
+		for (int i = 0, n = reap.size(); i < n; i++) {
+			waves.remove(reap.get(i));
+		}
 	}
-	for (int i = 0, n = reap.size(); i < n; i++) {
-	    waves.remove(reap.get(i));
-	}
-    }
 
-    void registerVisit() {
-	for (int i = 0, n = guessors.size(); i < n; i++) {
-	    Guessor gun = (Guessor)guessors.get(i);
-	    gun.registerVisit(this, guesses);
+	void registerVisit() {
+		for (int i = 0, n = guessors.size(); i < n; i++) {
+			Guessor gun = (Guessor)guessors.get(i);
+			gun.registerVisit(this, guesses);
+		}
 	}
-    }
 
-    int mostVisited() {
-	for (int i = 0, n = guessors.size(); i < n; i++) {
-	    Guessor gun = (Guessor)guessors.get(i);
-	    gun.guess(this);
-	    guesses.put(gun, new Integer(gun.guessed()));
+	int mostVisited() {
+		for (int i = 0, n = guessors.size(); i < n; i++) {
+			Guessor gun = (Guessor)guessors.get(i);
+			gun.guess(this);
+			guesses.put(gun, new Integer(gun.guessed()));
+		}
+		return currentGuessor.guessed();
 	}
-	return currentGuessor.guessed();
-    }
 
-    Guessor currentGuessor() {
-	return currentGuessor;
-    }
+	Guessor currentGuessor() {
+		return currentGuessor;
+	}
 
-    public double maxEscapeAngle() {
-	return PUtils.maxEscapeAngle(bulletVelocity) * 1.4;
-    }
-    
-    static double hitRate() {
-	if (Bee.roundNum > 0) {
-	    return rangeHits / Bee.roundNum;
+	public double maxEscapeAngle() {
+		return PUtils.maxEscapeAngle(bulletVelocity) * 1.4;
 	}
-	return 0;
-    }
 
-    static void readStats() {
-	if (!Bee.isTC) {
-	    try {
-		guessors = (ArrayList)(new ObjectInputStream(new GZIPInputStream(new FileInputStream(robot.getDataFile(Bee.enemyName + ".obj.gz"))))).readObject();
-		accumulator = (AccumulatingGuessor)guessors.get(0);
-		replacor = (ReplacingGuessor)guessors.get(1);
-		System.out.println("Read Guessor data for enemy: " + Bee.enemyName + "\n\t" + GunWave.guessors.toString());
-	    } catch (Exception e) {
-		System.out.println("Couldn't read Guessor data for enemy: " + Bee.enemyName + "\n ( " + e.getMessage() + ")");
-	    }
+	static Map<String, List<Guessor>> readEnemies(AdvancedRobot robot) {
+		Map<String, List<Guessor>> enemies;
+		try {
+			enemies = (HashMap<String, List<Guessor>>)(new ObjectInputStream(new GZIPInputStream(new FileInputStream(robot.getDataFile("vgstats.gz"))))).readObject();
+			System.out.println("Read vgstats for " + enemies.size() + " enemies");
+		} catch (Exception e) {
+			enemies = new HashMap<String, List<Guessor>>();
+			System.out.println("Couldn't read vgstats: " + e.getMessage());
+		}
+		return enemies;
 	}
-	if (guessors == null) {
-	    guessors = new ArrayList();
-	    guessors.add(accumulator = new AccumulatingGuessor());
-	    guessors.add(replacor = new ReplacingGuessor());
-	}
-    }
 
-    static void saveStats() {
-	List orderedGuessors = new ArrayList();
-	orderedGuessors.add(accumulator);
-	orderedGuessors.add(replacor);
-	try {
-	    ObjectOutputStream oos = new ObjectOutputStream(new GZIPOutputStream(new RobocodeFileOutputStream(robot.getDataFile(Bee.enemyName + ".obj.gz"))));
-	    oos.writeObject(orderedGuessors);
-	    oos.close();
-	    System.out.println("Wrote Guessor data for enemy: " + Bee.enemyName);
-	} catch (IOException e) {
-	    System.out.println("Couldn't write Guessor data for enemy: " + Bee.enemyName + "\n ( " + e.getMessage() + ")");
+	static void writeEnemies(AdvancedRobot robot, Map<String, List<Guessor>> enemies, String enemyName) {
+		try {
+			ObjectOutputStream oos = new ObjectOutputStream(new GZIPOutputStream(new RobocodeFileOutputStream(robot.getDataFile("vgstats.gz"))));
+			oos.writeObject(enemies);
+			oos.close();
+			System.out.println("Wrote vgstats for " + enemyName + " (" + enemies.size() + " enemies on file)");
+		} catch (IOException e) {
+			System.out.println("Couldn't write vgstats: " + e.getMessage());
+		}
 	}
-    }
+
+	static void readStats(AdvancedRobot robot) {
+		if (!Bee.isTC) {
+			Map<String, List<Guessor>> enemies = readEnemies(robot);
+			guessors = (ArrayList<Guessor>)enemies.get(Bee.enemyName);
+		}
+		if (guessors != null) {
+			BeeAccumulator = (BeeAccumulator)guessors.get(0);
+			BeeReplacor = (BeeReplacor)guessors.get(1);
+			System.out.println("Fetched Guessor data for enemy: " + Bee.enemyName + "\n\t" + BeeWave.guessors.toString());
+		}
+		else {
+			System.out.println("No vgstats for " + Bee.enemyName + " on file yet.");
+			guessors = new ArrayList<Guessor>();
+			guessors.add(BeeAccumulator = new BeeAccumulator());
+			guessors.add(BeeReplacor = new BeeReplacor());
+		}
+	}
+
+	static void saveStats(AdvancedRobot robot) {
+		Map<String, List<Guessor>> enemies = readEnemies(robot);
+		List<Guessor> orderedGuessors = new ArrayList<Guessor>();
+		orderedGuessors.add(BeeAccumulator);
+		orderedGuessors.add(BeeReplacor);
+		enemies.put(Bee.enemyName, orderedGuessors);
+		writeEnemies(robot, enemies, Bee.enemyName);
+		logVGStats(enemies.keySet().toArray(), enemies.values().toArray());
+	}
+
+	static void logVGStats(Object[] names, Object[] data) {
+		System.out.println("Name" + "\t" + Guessor.logHeader("A") + "\t" + Guessor.logHeader("B") + "\t" + "Selected");
+		for (int i = 0, il = data.length; i < il; i++) {
+			System.out.print(names[i] + "\t");
+			List<Guessor> guessors = (ArrayList<Guessor>)data[i];
+			for (int j = 0, jl = guessors.size(); j < jl; j++) {
+				Guessor g = (Guessor)guessors.get(j);
+				System.out.print(g.logRow() + "\t");
+			}
+			Collections.sort(guessors);
+			System.out.println(((Guessor)guessors.get(0)).name());
+		}
+	}
+
 }
 
-class VisitsIndex implements Comparable {
-    double visits;
-    int index;
+abstract class Guessor implements Comparable<Object>, Serializable {
+	static final long serialVersionUID = 4;
+	static final int ACCEL_INDEXES = 3;
+	static final double[] DISTANCE_SLICES = { 150, 300, 450, 600 };
+	static final double[] DISTANCE_SLICES_FASTER = { 300, 500 };
+	static final double[] VELOCITY_SLICES = { 1, 3, 5, 7 };
+	static final double[] VELOCITY_SLICES_FASTER = { 2, 4, 6 };
+	static final double[] WALL_SLICES = { 0.15, 0.35, 0.55, 0.75 };
+	static final double[] WALL_SLICES_FASTER = { 0.25, 0.5, 0.75 };
+	static final double[] WALL_SLICES_REVERSE = { 0.35, 0.7 };
+	static final double[] TIMER_SLICES = { 0.1, 0.3, 0.7, 1.2 };
+	static final double[] TIMER_SLICES_FASTER = { 0.1, 0.3, 0.7 };
+	static final int RATING_UPDATE_ROUNDS = 1;
+	static final int RATING_UPDATE_START = 5;
+	static final int RATING_UPDATE_STOP = 50;
+	static final double RATING_INCREMENT_THRESHOLD = 0.02;
+	static final double VRATING_START = 80;
+	static final double VRATING_ROLL_DEPTH = 300;
+	static final double BeeAccumulator_REWARD_TRIGGER_VRATING = 90;
+	static final double BeeAccumulator_VRATING_BONUS = 10;
+	static final double BeeAccumulator_RATING_INCREMENT = 1;
+	static final double BeeReplacor_RATING_INCREMENT = 2;
+	double rating;
+	private long rBulletsFired;
+	private double rRating;
+	protected double vRating;
+	int rounds;
+	transient private int guess;
 
-    public VisitsIndex(double v, int i) {
-	visits = v * 10000;
-	index = i;
-    }
+	abstract void registerVisit(int index, BeeWave w);
+	abstract double[][] buffers(BeeWave w);
+	abstract void incrementRating();
 
-    public int compareTo(Object o) {
-	return (int)(((VisitsIndex)o).visits - visits);
-    }
+	void registerVisit(BeeWave w, Map<Guessor, Integer> guesses) {
+		int index = Math.max(1, w.visitingIndex());
+		if (w.weight > 2.0) {
+			updateVRating(index, ((Integer)guesses.get(this)).intValue(), w);
+		}
+		registerVisit(index, w);
+	}
+
+	int mostVisited(BeeWave w) {
+		int defaultIndex = BeeWave.MIDDLE_BIN + BeeWave.MIDDLE_BIN / 4;
+		double uses = 0;
+		double[][] buffers = buffers(w);
+		for (int b = 0; b < buffers.length; b++) {
+			uses += buffers[b][0];
+		}
+		if (uses < 1) {
+			return defaultIndex;
+		}
+		List<VisitsIndex> visitRanks = new ArrayList<VisitsIndex>();
+		for (int i = 1; i < BeeWave.BINS; i++) {
+			double visits = 0;
+			for (int b = 0; b < buffers.length; b++) {
+				visits += uses * buffers[b][i] / Math.max(1, buffers[b][0]);
+			}
+			visitRanks.add(new VisitsIndex(visits, i));
+		}
+		Collections.sort(visitRanks);
+		return ((VisitsIndex)visitRanks.get(0)).index;
+	}
+
+	void guess(BeeWave w) {
+		guess = mostVisited(w);
+	}
+
+	int guessed() {
+		return guess;
+	}
+
+	void registerFire() {
+		rBulletsFired++;
+	}
+
+	void registerHit(double power, double distance) {
+		rRating += reward(1, distance);
+	}
+
+	double reward(double reward, double distance) {
+		return reward * distance / 100;
+	}
+
+	double hit(double diff, BeeWave w) {
+		return w.hit(diff) ? 100 : 0;
+	}
+
+	void updateVRating(int index, int guess, BeeWave w) {
+		vRating = PUtils.rollingAvg(vRating, reward(hit(guess - index, w), w.distance), VRATING_ROLL_DEPTH);
+	}
+
+	double rRating() {
+		return rRating / rBulletsFired;
+	}
+
+	double vRating() {
+		return vRating;
+	}
+
+	public int compareTo(Object o) {
+		return (int)((((Guessor)o).rating - rating) * 1000);
+	}
+
+	static VirtualStatsComparator getVirtualStatsComparator() {
+		return new VirtualStatsComparator();
+	}
+
+	static class VirtualStatsComparator implements Comparator<Object> {
+		public int compare(Object a, Object b) {
+			return (int)((((Guessor)b).vRating() - ((Guessor)a).vRating()) * 100);
+		}
+	}
+
+	String name() {
+		String name = this.getClass().getName();
+		return name.substring(name.lastIndexOf(".") + 1);
+	}
+
+	String echoStats() {
+		return name() + " vr" + logNum(vRating) +
+		" rr" + logNum(rRating());
+	}
+
+	static String logHeader(String tag) {
+		return "Rounds " + tag + "\t" + 
+		"vRating " + tag + "\t" + 
+		"rRating " + tag;
+	}
+
+	static String logNum(double num) {
+		return java.text.NumberFormat.getNumberInstance().format(num);
+	}
+
+	String logRow() {
+		return rounds + "\t" +
+		logNum(vRating) + "\t" +
+		logNum(rRating);
+	}
+
+	public String toString() {
+		return echoStats();
+	}
 }
 
-abstract class Guessor implements Comparable, Serializable {
-    static final long serialVersionUID = 3;
-    static final int ACCEL_INDEXES = 3;
-    static final double[] DISTANCE_SLICES = { 150, 300, 450, 600 };
-    static final double[] DISTANCE_SLICES_FASTER = { 300, 500 };
-    static final double[] VELOCITY_SLICES = { 1, 3, 5, 7 };
-    static final double[] VELOCITY_SLICES_FASTER = { 2, 4, 6 };
-    static final double[] WALL_SLICES = { 0.15, 0.35, 0.55, 0.75 };
-    static final double[] WALL_SLICES_FASTER = { 0.25, 0.5, 0.75 };
-    static final double[] WALL_SLICES_REVERSE = { 0.35, 0.7 };
-    static final double[] TIMER_SLICES = { 0.1, 0.3, 0.7, 1.2 };
-    static final double[] TIMER_SLICES_FASTER = { 0.1, 0.3, 0.7 };
-    private long rBulletsFired;
-    private double rRating;
-    private long vBulletsFired;
-    private double vRating;
-    private long vvBulletsFired;
-    private double vvRating;
-    int roundsUsed;
-    int rounds;
-    transient private int guess;
+class BeeAccumulator extends Guessor {
+	static final long serialVersionUID = 4;
+	private static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1][ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
+	private static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
 
-    abstract void registerVisit(int index, GunWave w);
-    abstract int mostVisited(GunWave w);
-
-    void registerVisit(GunWave w, Map guesses) {
-	int index = Math.max(1, w.visitingIndex());
-	updateVVRating(index, ((Integer)guesses.get(this)).intValue(), w);
-	if (w.weight > 2.0) {
-	    updateVRating(index, ((Integer)guesses.get(this)).intValue(), w);
+	BeeAccumulator() {
+		vRating = Guessor.VRATING_START + Guessor.BeeAccumulator_VRATING_BONUS;
 	}
-	registerVisit(index, w);
-    }
 
-    void guess(GunWave w) {
-	guess = mostVisited(w);
-    }
-
-    int guessed() {
-	return guess;
-    }
-
-    void registerFire() {
-	rBulletsFired++;
-    }
-
-    void registerHit(double power, double distance) {
-	rRating += reward(1, distance);
-    }
-
-    double reward(double reward, double distance) {
-	return reward * distance / 100;
-    }
-
-    double hitOrMiss(double diff, GunWave w) {
-	return (Math.abs(diff) <= (double)w.botWidth() / 2.0) ? 1 : 0;
-    }
-
-    void updateVVRating(int index, int guess, GunWave w) {
-	vvBulletsFired++;
-	vvRating += reward(hitOrMiss(guess - index, w), w.distance);
-    }
-
-    void updateVRating(int index, int guess, GunWave w) {
-	vBulletsFired++;
-	vRating += reward(hitOrMiss(guess - index, w), w.distance);
-    }
-
-    double rRating() {
-	return rRating / rBulletsFired + 1;
-    }
-
-    double vRating() {
-	return vRating / vBulletsFired;
-    }
-
-    double vvRating() {
-	return vvRating / vvBulletsFired;
-    }
-
-    double weighedRRating() {
-	return rRating() * (1 + 75 / Math.pow(roundsUsed + 1, 3));
-    }
-
-    public int compareTo(Object o) {
-	Guessor g = (Guessor)o;
-	double diff = 0;
-	double vvDiff = g.vvRating() - vvRating();
-	double vvDiffSize = Math.abs(vvDiff) / (g.vvRating() + vvRating());
-	double vDiff = g.vRating() - vRating();
-	double vDiffSize = Math.abs(vDiff) / (g.vRating() + vRating());
-	if (vvDiffSize > 0.05 + Math.pow(rounds, 1.5) / ((80 * rounds) + 1)) {
-	    diff = vvDiff;
+	void incrementRating() {
+		rating += Guessor.BeeAccumulator_RATING_INCREMENT;
 	}
-	else if (vDiffSize > 0.01 + Math.min(0.15, Math.pow(rounds, 1.5) / ((80 * rounds) + 1)) || rBulletsFired == 0) {
-	    diff = vDiff;
-	}
-	else {
-	    diff = g.weighedRRating() - weighedRRating();
-	}
-	return (int)(100000 * diff);
-    }
 
-    String echoStats() {
-	String name = this.getClass().getName();
-	name = name.substring(name.lastIndexOf(".") + 1);
-	return name + " vvr" + java.text.NumberFormat.getNumberInstance().format(vvRating()) +
-	    " vr" + java.text.NumberFormat.getNumberInstance().format(vRating()) +
-	    " rr" + java.text.NumberFormat.getNumberInstance().format(rRating()) +
-	    " rb" + (int)rBulletsFired;
-    }
+	double[][] buffers(BeeWave w) {
+		return new double[][] {
+				faster[w.distanceSegmentFaster][w.velocitySegmentFaster][w.accelSegment][w.vChangeSegmentFaster][w.wallSegmentFaster],
+				slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment],
+		};
+	}
 
-    public String toString() {
-	return echoStats();
-    }
+	void registerVisit(int index, BeeWave w) {
+		double[][] buffers = buffers(w);
+		for (int b = 0; b < buffers.length; b++) {
+			buffers[b][0]++;
+			for (int i = 1; i < BeeWave.BINS; i++) {
+				buffers[b][i] += w.weight / (Math.pow(Math.abs(i - index) + 1, 1.5));
+			}
+		}
+	}
 }
 
-class AccumulatingGuessor extends Guessor {
-    static final long serialVersionUID = 3;
-    private static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1][ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][GunWave.BINS];
-    private static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][GunWave.BINS];
+class BeeReplacor extends Guessor {
+	//stat array 1:latvelocity = {2, 4, 6}distance = {250, 500}walldistance = {0.25, 0.5, 0.75}vchangetime = {.1, .4, 1.0)accel = 0/1/2 (changes of over .2, effectively same as Bee I think)
+	//stat array 2:advvelocity = {-2.5, 2.5}latvelocity = {1, 3, 5, 7}distance = {200, 400, 600}walldistance = {0.2, 0.5, 0.8}walldistancereverse = {0.5}accel = 0/1/2 ...vchangetime = {.1, .4, .7, 1.1, 1.5} 
+	static final long serialVersionUID = 4;
+	private static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1][ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
+	private static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
 
+	BeeReplacor() {
+		vRating = Guessor.VRATING_START;
+	}
 
+	void incrementRating() {
+		rating += Guessor.BeeReplacor_RATING_INCREMENT;
+	}
 
-    double[][] buffers(GunWave w) {
-	return new double[][] {
-	    faster[w.distanceSegmentFaster][w.velocitySegmentFaster][w.accelSegment][w.vChangeSegmentFaster][w.wallSegmentFaster],
-	    slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment]
-	};
-    }
+	double[][] buffers(BeeWave w) {
+		return new double[][] {
+				faster[w.distanceSegmentFaster][w.velocitySegmentFaster][w.accelSegment][w.vChangeSegmentFaster][w.wallSegmentFaster],
+				slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment]
+		};
+	}
 
-    void registerVisit(int index, GunWave w) {
-	double[][] buffers = buffers(w);
-	for (int b = 0; b < buffers.length; b++) {
-	    buffers[b][0]++;
-	    for (int i = 1; i < GunWave.BINS; i++) {
-		buffers[b][i] *= 1 - w.weight / 600;
-	    }
-	    for (int i = 1; i < GunWave.BINS; i++) {
-		buffers[b][i] += (w.weight / 600) / (Math.pow(i - index, 2) + 1);
-	    }
+	void registerHit(BeeWave w) {
+		double[][] buffers = buffers(w);
+		for (int b = 0; b < buffers.length; b++) {
+			buffers[b][0]++;
+			for (int i = 1; i < BeeWave.BINS; i++) {
+				buffers[b][i] = PUtils.rollingAvg(buffers[b][i], -buffers[b][i], 1);
+			}
+		}
 	}
-    }
-
-    int mostVisited(GunWave w) {
-	int defaultIndex = GunWave.MIDDLE_BIN + GunWave.MIDDLE_BIN / 4;
-	double uses = 0;
-	double[][] buffers = buffers(w);
-	for (int b = 0; b < buffers.length; b++) {
-	    uses += buffers[b][0];
+	
+	void registerVisit(int index, BeeWave w) {
+		double[][] buffers = buffers(w);
+		for (int b = 0; b < buffers.length; b++) {
+			buffers[b][0]++;
+			for (int i = 1; i < BeeWave.BINS; i++) {
+				buffers[b][i] = PUtils.rollingAvg(buffers[b][i], w.weight / (Math.pow(Math.abs(i - index) + 1, 1.5)), 3);
+			}
+		}
 	}
-	if (uses < 1) {
-	    return defaultIndex;
-	}
-	List visitRanks = new ArrayList();
-	for (int i = 1; i < GunWave.BINS; i++) {
-	    double visits = 0;
-	    for (int b = 0; b < buffers.length; b++) {
-		visits += 1000 * buffers[b][i] / Math.max(1, buffers[b][0]);
-	    }
-	    visitRanks.add(new VisitsIndex(visits, i));
-	}
-	Collections.sort(visitRanks);
-	return ((VisitsIndex)visitRanks.get(0)).index;
-    }
-}
-
-class ReplacingGuessor extends Guessor {
-    static final long serialVersionUID = 3;
-    private static int[][][][][][] faster = new int[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1][ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][2];
-    private static int[][][][][][][] slower = new int[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][2];
-
-    int[][] buffers(GunWave w) {
-	return new int[][] { faster[w.distanceSegmentFaster][w.velocitySegmentFaster][w.accelSegment][w.vChangeSegmentFaster][w.wallSegmentFaster],
-			     slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment] };
-    }
-
-    void registerVisit(int index, GunWave w) {
-	int[][] buffers = buffers(w);
-	for (int b = 0; b < buffers.length; b++) {
-	    buffers[b][0]++;
-	    buffers[b][1] = index;
-	}
-    }
-	    
-    int mostVisited(GunWave w) {
-	int defaultIndex = GunWave.MIDDLE_BIN - GunWave.MIDDLE_BIN / 2 + (int)(Math.random() * (double)GunWave.MIDDLE_BIN);
-	double uses = 0;
-	int[][] buffers = buffers(w);
-	for (int b = 0; b < buffers.length; b++) {
-	    uses += buffers[b][0];
-	}
-	if (uses < 1) {
-	    return defaultIndex;
-	}
-	List visitRanks = new ArrayList();
-	for (int b = 0; b < buffers.length; b++) {
-	    if (buffers[b][0] > 0) {
-		visitRanks.add(new VisitsIndex(uses / Math.max(1, buffers[b][0]), buffers[b][1]));
-	    }
-	}
-	Collections.sort(visitRanks);
-	return ((VisitsIndex)visitRanks.get(0)).index;
-    }
 }

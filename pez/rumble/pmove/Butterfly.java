@@ -1,28 +1,19 @@
 package pez.rumble.pmove;
+import pez.rumble.utils.*;
+import pez.rumble.RumbleBot;
+import robocode.*;
+import java.util.*;
 import java.awt.Graphics2D;
-import java.awt.geom.Point2D;
-import java.awt.geom.Rectangle2D;
-import java.util.ArrayList;
-import java.util.List;
+import java.awt.geom.*;
 
-import pez.rumble.utils.PUtils;
-import pez.rumble.utils.Wave;
-import pez.rumble.utils.WaveGrapher;
-import robocode.AdvancedRobot;
-import robocode.Bullet;
-import robocode.BulletHitBulletEvent;
-import robocode.BulletHitEvent;
-import robocode.HitByBulletEvent;
-import robocode.ScannedRobotEvent;
+//Butterfly, a movement by PEZ. For CassiusClay - Float like a butterfly!
+//http://robowiki.net/?CassiusClay
 
-// Butterfly, a movement by PEZ. For CassiusClay - Float like a butterfly!
-// http://robowiki.net/?CassiusClay
-//
-// This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
-// http://robowiki.net/?RWPCL
-// (Basically it means you must keep the code public if you base any bot on it.)
-//
-// $Id: Butterfly.java,v 1.25 2004/09/27 23:00:14 peter Exp $
+//This code is released under the RoboWiki Public Code Licence (RWPCL), datailed on:
+//http://robowiki.net/?RWPCL
+//(Basically it means you must keep the code public if you base any bot on it.)
+
+//$Id: Butterfly.java,v 1.16 2007-02-28 06:14:58 peters Exp $
 
 
 public class Butterfly {
@@ -37,25 +28,24 @@ public class Butterfly {
 	static final double WALL_MARGIN = 20;
 	static final double DEFAULT_BLIND_MANS_STICK = 120;
 
+	static public double wallDistance;
 	static Rectangle2D fieldRectangle;
 	static Point2D robotLocation = new Point2D.Double();
 	static Point2D enemyLocation = new Point2D.Double();
 	static double enemyAbsoluteBearing;
-	static double enemyApproachVelocity;
 	static double enemyDistance;
 	static int distanceIndex;
 	static double enemyEnergy;
 	static double enemyVelocity;
 	static double enemyFirePower = 2.5;
 	static int lastVelocityIndex;
-	static double approachVelocity;
+	static double approachVelocity = 4;
 	static double velocity;
 	static int timeSinceVChange;
 	static double lastForwardSmoothing;
 	static double roundNum;
 	static long lastScanTime;
 	static long time;
-	static long scans;
 	static int bulletsThisRound;
 
 	double roundsLeft;
@@ -67,7 +57,6 @@ public class Butterfly {
 		MovementWave.reset();
 		enemyEnergy = 100;
 		fieldRectangle = PUtils.fieldRectangle(robot, WALL_MARGIN);
-
 		if (roundNum > 0) {
 			System.out.println("range hits taken: " + (int)MovementWave.rangeHits + " (average / round: " + PUtils.formatNumber(MovementWave.rangeHits / roundNum) + ")");
 		}
@@ -75,18 +64,14 @@ public class Butterfly {
 		roundsLeft = robot.getNumRounds() - roundNum - 1;
 		roundNum++;
 		bulletsThisRound = 0;
-		if (doGL) { // GL
-			WaveGrapher.initDangerGraph(); // GL
-		} // GL
-	}
-	
-	public void onPaint(Graphics2D g) {
-		WaveGrapher.onPaint(g);
+		WaveGrapher.initDangerGraph(); // GL
 	}
 
 	public void onScannedRobot(ScannedRobotEvent e) {
-		scans++;
 		time = robot.getTime();
+		if (RumbleBot.enemyIsRammer()) {
+			fieldRectangle = PUtils.fieldRectangle(robot, 70);
+		}
 		MovementWave wave = new MovementWave(robot, this);
 		wave.startTime = robot.getTime() - 2;
 
@@ -96,16 +81,13 @@ public class Butterfly {
 		}
 		enemyVelocity = e.getVelocity();
 
-		if (robot.getOthers() > 0 && scans > 0) {
-			enemyApproachVelocity = PUtils.rollingAvg(enemyApproachVelocity, enemyVelocity * -Math.cos(e.getHeadingRadians() - enemyAbsoluteBearing), Math.min(scans, 5000));
-		}
-
 		wave.setGunLocation(new Point2D.Double(enemyLocation.getX(), enemyLocation.getY()));
 		wave.setStartBearing(wave.gunBearing(robotLocation));
 
 		double enemyDeltaEnergy = enemyEnergy - e.getEnergy() - wallDamage;
-		if (enemyDeltaEnergy >= 0.1 && enemyDeltaEnergy <= 3.0) {
+		if (enemyDeltaEnergy > 0 && enemyDeltaEnergy <= 3.1) {
 			enemyFirePower = enemyDeltaEnergy;
+			wave.isSurfable = true;
 			MovementWave.bullets.add(wave);
 			MovementWave.surfables.add(wave);
 			bulletsThisRound++;
@@ -118,9 +100,9 @@ public class Butterfly {
 		wave.setBulletVelocity(bulletVelocity);
 
 		double orbitDirection = robotOrbitDirection(wave.gunBearing(robotLocation));
-		wave.setOrbitDirection(wave.maxEscapeAngle() * orbitDirection / (double)MovementWave.MIDDLE_FACTOR);
+		wave.setOrbitDirection(wave.maxEscapeAngle() * orbitDirection / (double)MovementWave.getMiddleFactor());
 
-		approachVelocity = velocity * -Math.cos(robot.getHeadingRadians() - (enemyAbsoluteBearing + 180));
+		approachVelocity = velocity * -Math.cos(robot.getHeadingRadians() - (enemyAbsoluteBearing + Math.PI));
 		wave.approachIndex = PUtils.index(MovementWave.APPROACH_SLICES, approachVelocity);
 
 		distanceIndex = PUtils.index(MovementWave.DISTANCE_SLICES, enemyDistance);
@@ -140,8 +122,7 @@ public class Butterfly {
 		wave.setTargetLocation(robotLocation);
 
 		wave.vChangeIndex = PUtils.index(MovementWave.TIMER_SLICES, timeSinceVChange++ / wave.travelTime());
-		double wallDistance = wave.wallDistance(1, fieldRectangle);
-		//wave.wallIndex = PUtils.index(MovementWave.WALL_SLICES, lastForwardSmoothing);
+		wallDistance = wave.wallDistance(1, fieldRectangle);
 		wave.wallIndex = PUtils.index(MovementWave.WALL_SLICES, wallDistance);
 		double wallDistanceReverse = wave.wallDistance(-1, fieldRectangle);
 		wave.wallIndexReverse = PUtils.index(MovementWave.WALL_SLICES_REVERSE, wallDistanceReverse);
@@ -158,17 +139,19 @@ public class Butterfly {
 
 		MovementWave.reset();
 		lastScanTime = robot.getTime();
-		//System.out.print(wave.distanceIndex);
-		//System.out.print(", " + wave.velocityIndex);
-		//System.out.print(", " + wave.accelIndex);
-		//System.out.print(", " + wave.lastVelocityIndex);
-		//System.out.print(", " + wave.vChangeIndex);
-		//System.out.print(", " + wave.wallIndex);
-		//System.out.println(", " + wave.approachIndex);
 	}
 
 	public void onHitByBullet(HitByBulletEvent e) {
 		Bullet b = e.getBullet();
+		/*
+		Hit hit = new Hit(b.getPower(), enemyDistance, robotLocation, enemyLocation);
+		MovementWave wave = (MovementWave)Wave.findClosest(MovementWave.bullets, new Point2D.Double(b.getX(), b.getY()), b.getVelocity());
+		if (wave != null) {
+			hit.gf = wave.getGF(new Point2D.Double(b.getX(), b.getY()));
+		}
+		Hit.hits.add(hit);
+		hit.print();
+		*/
 		MovementWave.hitsTaken++;
 		if (b.getPower() > 1.2 && enemyDistance > 150) {
 			MovementWave.rangeHits++;
@@ -187,7 +170,7 @@ public class Butterfly {
 	}
 
 	void move(MovementWave wave, double direction) {
-		MovementWave.updateWaves();
+		MovementWave.updateWaves(robot);
 		MovementWave closest = (MovementWave)Wave.findClosest(MovementWave.surfables, robotLocation);
 		Point2D orbitCenter = orbitCenter(closest);
 		if (closest != null) {
@@ -198,11 +181,15 @@ public class Butterfly {
 		lastForwardSmoothing = forward.normalizedSmoothing();
 		Move reverse = wallSmoothedDestination(robotLocation, orbitCenter, -direction);
 		double reverseSmoothingDanger = reverse.smoothingDanger();
-		if (!(forward.normalizedSmoothing() > 20 && reverse.normalizedSmoothing() > 20)) {
+		if (RumbleBot.enemyIsRammer() && (!(forward.normalizedSmoothing() > 75 && reverse.normalizedSmoothing() > 75))) {
 			MovementWave.dangerForward += forwardSmoothingDanger;
 			MovementWave.dangerReverse += reverseSmoothingDanger;
 		}
-		if (forwardSmoothingDanger > 0 && reverseSmoothingDanger > 0) {
+		else if (!(forward.normalizedSmoothing() > 20 && reverse.normalizedSmoothing() > 20)) {
+			MovementWave.dangerForward += forwardSmoothingDanger;
+			MovementWave.dangerReverse += reverseSmoothingDanger;
+		}
+		if (RumbleBot.enemyIsRammer() || forwardSmoothingDanger > 0 && reverseSmoothingDanger > 0) {
 			MovementWave.dangerStop = MovementWave.dangerForward + MovementWave.dangerReverse;
 		}
 		Point2D destination = forward.location;
@@ -212,12 +199,12 @@ public class Butterfly {
 				wantedVelocity = 0;
 			}
 		}
-		else if (enemyEnergy > 0 && !enemyIsRammer() && MovementWave.bullets.size() == 0) {
+		else if (enemyEnergy > 0 && !RumbleBot.enemyIsRammer() && MovementWave.bullets.size() == 0) {
 			if (enemyLocation.distance(reverse.location) / enemyLocation.distance(forward.location) > 1.03) {
 				destination = reverse.location;
 			}
 		}
-		else if (!enemyIsRammer() && MovementWave.dangerStop < MovementWave.dangerReverse && MovementWave.dangerStop < MovementWave.dangerForward) {
+		else if (!RumbleBot.enemyIsRammer() && MovementWave.dangerStop < MovementWave.dangerReverse && MovementWave.dangerStop < MovementWave.dangerForward) {
 			wantedVelocity = 0;
 		}
 		else if (MovementWave.dangerReverse < MovementWave.dangerForward) {
@@ -238,7 +225,7 @@ public class Butterfly {
 		destination.setLocation(location);
 		double distance = enemyLocation.distance(location);
 		double evasion = evasion(distance);
-		double blindStick = enemyIsRammer() ? PUtils.minMax(enemyDistance / 2, 60, DEFAULT_BLIND_MANS_STICK) : DEFAULT_BLIND_MANS_STICK;
+		double blindStick = RumbleBot.enemyIsRammer() ? PUtils.minMax(enemyDistance / 1.7, 40, DEFAULT_BLIND_MANS_STICK) : DEFAULT_BLIND_MANS_STICK;
 		double smoothing = 0;
 		while (!fieldRectangle.contains(destination = PUtils.project(location,
 				PUtils.absoluteBearing(location, orbitCenter) - direction * ((evasion - smoothing / 100) * Math.PI / 2), blindStick)) && smoothing < MAX_WALL_SMOOTH_TRIES) {
@@ -247,18 +234,14 @@ public class Butterfly {
 		return new Move(destination, smoothing, evasion, distance, destination.distance(enemyLocation));
 	}
 
-	static boolean enemyIsRammer() {
-		return enemyApproachVelocity > 4.5;
-	}
-
 	static double evasion(double distance) {
 		double evasion;
 		if (time < 16) {
 			evasion = PUtils.minMax(distance / 700, 1.3, 5.0);
 		}
 		else {
-			if (enemyIsRammer()) {
-				evasion = 1.6;
+			if (RumbleBot.enemyIsRammer()) {
+				evasion = PUtils.minMax(150.0 / distance, 1.45, 1.65);
 			}
 			else if (time > 30 && bulletsThisRound == 0) {
 				evasion = PUtils.minMax(300.0 / distance, 0.75, 1.5);
@@ -332,6 +315,10 @@ public class Butterfly {
 	double robotOrbitDirection(double bearing) {
 		return PUtils.sign(robot.getVelocity() * Math.sin(robot.getHeadingRadians() - bearing));
 	}
+
+	public void onPaint(Graphics2D g) {
+		WaveGrapher.onPaint(g);
+	}
 }
 
 class Move {
@@ -350,7 +337,7 @@ class Move {
 	}
 
 	double smoothingDanger() {
-		if (normalizedSmoothing() > 80 || (oldDistance > 220 && newDistance < 250) && normalizedSmoothing() > 20) {
+		if (normalizedSmoothing() > 65 || (oldDistance > 220 && newDistance < 250) && normalizedSmoothing() > 20) {
 			return (1 + smoothing) * 50;
 		}
 		return 0;
@@ -386,9 +373,8 @@ class Hit {
 
 	static void printAll() {
 		for (int i = 0, n = Hit.hits.size(); i < n; i++) {
-			Hit hit = Hit.hits.get(i);
+			Hit hit = (Hit)Hit.hits.get(i);
 			hit.print();
 		}
 	}
 }
-
