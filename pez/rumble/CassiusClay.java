@@ -1,13 +1,19 @@
 package pez.rumble;
-import pez.rumble.pgun.*;
-import pez.rumble.pmove.*;
-import pez.rumble.utils.*;
-import robocode.*;
-import robocode.util.Utils;
-import java.util.*;
-import java.awt.geom.*;
 import java.awt.Color;
 import java.awt.Graphics2D;
+
+import pez.rumble.pgun.Bee;
+import pez.rumble.pmove.Butterfly;
+import pez.rumble.utils.RobotPredictor;
+import robocode.AdvancedRobot;
+import robocode.BulletHitBulletEvent;
+import robocode.BulletHitEvent;
+import robocode.DeathEvent;
+import robocode.HitByBulletEvent;
+import robocode.ScannedRobotEvent;
+import robocode.SkippedTurnEvent;
+import robocode.WinEvent;
+import robocode.util.Utils;
 
 // CassiusClay - by PEZ - Float like a butterfly. Sting like a bee.
 //
