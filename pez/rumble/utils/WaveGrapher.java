@@ -193,7 +193,7 @@ class GPoint extends GShape implements IRenderElement {
 	@Override
 	public void render(Graphics2D g) {
 		g.setColor(fillColor);
-		ellipse.setFrameFromCenter(new Point((int)center_x, (int)center_y), new Point((int)(center_x + size), (int)(center_y + size)));
+		ellipse.setFrameFromCenter(new Point((int)center_x, (int)center_y), new Point((int)(center_x + size / 2f), (int)(center_y + size / 2f)));
 		g.fill(ellipse);
 		renderLabels(g);
 	}
@@ -220,7 +220,7 @@ class GRectangle extends GShape implements IRenderElement {
 	@Override
 	public void render(Graphics2D g) {
 		g.setColor(fillColor);
-		rectangle.setFrameFromCenter(new Point((int)center_x, (int)center_y), new Point((int)(center_x + width), (int)(center_y + height)));
+		rectangle.setFrameFromCenter(new Point((int)center_x, (int)center_y), new Point((int)(center_x + width / 2f), (int)(center_y + height / 2f)));
 		g.fill(rectangle);
 		renderLabels(g);
 	}
