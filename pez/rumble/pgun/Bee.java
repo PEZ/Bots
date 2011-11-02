@@ -192,7 +192,7 @@ class BeeWave extends GunWave {
 			}
 		}
 		Collections.sort(guessors);
-		currentGuessor = (Guessor)guessors.get(0);
+		currentGuessor = BeeAccumulator; //(Guessor)guessors.get(0);
 	}
 
 	public BeeWave(AdvancedRobot robot) {
@@ -498,7 +498,8 @@ class BeeAccumulator extends Guessor {
 		for (int b = 0; b < buffers.length; b++) {
 			buffers[b][0]++;
 			for (int i = 1; i < BeeWave.BINS; i++) {
-				buffers[b][i] += w.weight / (Math.pow(Math.abs(i - index) + 1, 1.5));
+				//buffers[b][i] += w.weight / (Math.pow(Math.abs(i - index) + 1, 1.5));
+				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], index == i ? w.weight : 0.0, 0.7);
 			}
 		}
 	}

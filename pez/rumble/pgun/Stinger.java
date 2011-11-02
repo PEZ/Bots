@@ -79,7 +79,9 @@ public abstract class Stinger {
 			bulletPower = 1.6;
 		}
 		if (robot.enemyHasFired) {
-			bulletPower = Math.max(0.1, robot.lastEnemyBulletPower);
+			if (robot.lastEnemyBulletPower < bulletPower) {
+				bulletPower = robot.lastEnemyBulletPower;
+			}
 		}
 		return Math.min(bulletPower, eEnergy / 4.0);
 	}
