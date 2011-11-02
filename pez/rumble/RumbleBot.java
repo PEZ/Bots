@@ -23,14 +23,17 @@ public abstract class RumbleBot extends AdvancedRobot {
 
 	static double wins;
 	static int skipped;
+	static long scans;
+	static double enemyApproachVelocity;
 
 	Butterfly floater;
 	Stinger stinger;
 	RobotPredictor robotPredictor = new RobotPredictor();
 	int timeSinceScan = 0;
 	ScannedRobotEvent lastScanEvent;
-	static long scans;
-	static double enemyApproachVelocity;
+	public double lastEnemyBulletPower;
+	public boolean enemyHasFired;
+
 
 
 	public void run() {
@@ -120,5 +123,9 @@ public abstract class RumbleBot extends AdvancedRobot {
 		doGL = true;
 		Butterfly.doGL = true;
 		floater.onPaint(g);
+	}
+	
+	public void enemyFired(double bulletPower) {
+		stinger.enemyFired(bulletPower);
 	}
 }

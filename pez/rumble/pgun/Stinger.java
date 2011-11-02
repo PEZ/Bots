@@ -29,11 +29,11 @@ public abstract class Stinger {
 
 	long lastScanTime;
 	GunWave lastWave;
-	AdvancedRobot robot;
+	RumbleBot robot;
 	RobotPredictor robotPredictor;
 	double distance = 0;
 	
-	public Stinger(AdvancedRobot robot, RobotPredictor robotPredictor) {
+	public Stinger(RumbleBot robot, RobotPredictor robotPredictor) {
 		this.robot = robot;
 		this.robotPredictor = robotPredictor;
 		fieldRectangle = PUtils.fieldRectangle(robot, WALL_MARGIN);
@@ -78,8 +78,10 @@ public abstract class Stinger {
 		else if (rEnergy < 20 && eEnergy > 8) {
 			bulletPower = 1.6;
 		}
+		if (robot.enemyHasFired) {
+			bulletPower = Math.max(0.1, robot.lastEnemyBulletPower);
+		}
 		return Math.min(bulletPower, eEnergy / 4.0);
-	
 	}
 
 	public void roundOver() {
@@ -91,10 +93,16 @@ public abstract class Stinger {
 		}
 		return 0;
 	}
+
 	public void onBulletHit(BulletHitEvent e) {
 		if (distance > 150 && e.getBullet().getPower() > 1.2) {
 			rangeHits++;
 		}
 		bulletHit(e);
+	}
+
+	public void enemyFired(double bulletPower) {
+		robot.lastEnemyBulletPower = bulletPower;
+		robot.enemyHasFired = true;
 	}
 }

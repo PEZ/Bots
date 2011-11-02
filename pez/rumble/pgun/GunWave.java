@@ -9,7 +9,7 @@ public class GunWave extends Wave {
 }
 
 
-class VisitsIndex implements Comparable {
+class VisitsIndex implements Comparable<Object> {
 	int visits;
 	int index;
 

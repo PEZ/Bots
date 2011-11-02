@@ -49,9 +49,9 @@ public class Butterfly {
 	static int bulletsThisRound;
 
 	double roundsLeft;
-	AdvancedRobot robot;
+	RumbleBot robot;
 
-	public Butterfly(AdvancedRobot robot) {
+	public Butterfly(RumbleBot robot) {
 		this.robot = robot;
 		MovementWave.init();
 		MovementWave.reset();
@@ -87,6 +87,7 @@ public class Butterfly {
 		double enemyDeltaEnergy = enemyEnergy - e.getEnergy() - wallDamage;
 		if (enemyDeltaEnergy > 0 && enemyDeltaEnergy <= 3.1) {
 			enemyFirePower = enemyDeltaEnergy;
+			robot.enemyFired(enemyFirePower);
 			wave.isSurfable = true;
 			MovementWave.bullets.add(wave);
 			MovementWave.surfables.add(wave);

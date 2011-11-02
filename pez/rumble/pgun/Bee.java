@@ -1,4 +1,5 @@
 package pez.rumble.pgun;
+import pez.rumble.RumbleBot;
 import pez.rumble.utils.*;
 import robocode.*;
 import robocode.util.Utils;
@@ -30,7 +31,7 @@ public class Bee extends Stinger {
 	long lastScanTime;
 	BeeWave lastWave;
 
-	public Bee(AdvancedRobot robot, RobotPredictor robotPredictor) {
+	public Bee(RumbleBot robot, RobotPredictor robotPredictor) {
 		super(robot, robotPredictor);
 	}
 
@@ -91,7 +92,10 @@ public class Bee extends Stinger {
 		double guessedBearing = nextBearing + orbitDirection * (wave.mostVisited() - BeeWave.MIDDLE_BIN);
 		robot.setTurnGunRightRadians(Utils.normalRelativeAngle(guessedBearing - robot.getGunHeadingRadians()));
 		if (isTC || (robot.getEnergy() >= 0.3 || e.getEnergy() < robot.getEnergy() / 5 || distance < 120)) {
-			if (Math.abs(robot.getGunTurnRemainingRadians()) < PUtils.botWidthAngle(distance) / 2 && robot.setFireBullet(bulletPower) != null && lastWave != null) {
+			if ((robot.getTime() > 50 || robot.enemyHasFired) &&
+				Math.abs(robot.getGunTurnRemainingRadians()) < PUtils.botWidthAngle(distance) / 2 &&
+				robot.setFireBullet(bulletPower) != null &&
+				lastWave != null) {
 					lastWave.weight = 5;
 					BeeWave.bullets.add(lastWave);
 					lastWave.currentGuessor().registerFire();
@@ -417,7 +421,15 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	}
 
 	public int compareTo(Object o) {
-		return (int)((((Guessor)o).rating - rating) * 1000);
+		double ratingA = this.vRating();
+		double ratingB = ((Guessor)o).vRating();
+		if (ratingA > ratingB) {
+			return -1;
+		}
+		else if (ratingB > ratingA) {
+			return 1;
+		}
+		return 0;
 	}
 
 	static VirtualStatsComparator getVirtualStatsComparator() {
@@ -426,7 +438,7 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 
 	static class VirtualStatsComparator implements Comparator<Object> {
 		public int compare(Object a, Object b) {
-			return (int)((((Guessor)b).vRating() - ((Guessor)a).vRating()) * 100);
+			return ((Guessor)a).compareTo(b);
 		}
 	}
 

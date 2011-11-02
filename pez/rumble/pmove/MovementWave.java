@@ -264,7 +264,7 @@ public class MovementWave extends Wave {
 		float[] fastHits = fastHitCounts;
 		double danger = 0;
 		for (int i = 1; i < getFactors(); i++) {
-			danger += ((hitRate() > 0.0 ? visitsFast[i] + visits[i] + visitsTimerWalls[i] + visitsTimer[i] + visitsDistanceVelocityWalls[i] + visitsWalls[i] + visitsDistanceVelocity[i] + visitsVelocityAccel[i] + visitsVelocityApproach[i] + visitsDVA[i] + visitsVelocity[i] : 0) +
+			danger += ((hitRate() > 1.8 ? visitsFast[i] + visits[i] + visitsTimerWalls[i] + visitsTimer[i] + visitsDistanceVelocityWalls[i] + visitsWalls[i] + visitsDistanceVelocity[i] + visitsVelocityAccel[i] + visitsVelocityApproach[i] + visitsDVA[i] + visitsVelocity[i] : 0) +
 					hitsTimerWalls[i] + hitsTimer[i] + hitsDistanceVelocityWalls[i] + hitsWalls[i] + hitsDistanceVelocity[i] + hitsVelocityAccel[i] + hitsVelocityApproach[i] + hitsDVA[i] + hitsVelocity[i] + fastHits[i]) / roots[Math.abs(index - i)];
 			//danger += ((isHighHitRate() ? visitsFast[i] + visits[i] + hitsTimerWalls[i] + hitsTimer[i] + hitsDistanceVelocityWalls[i] + hitsVelocityApproach[i] : 0) + hitsDVA[i] + hitsWalls[i] + hitsDistanceVelocity[i] + hitsVelocityAccel[i] + hitsVelocity[i] + fastHits[i]) / roots[Math.abs(index - i)];
 		}

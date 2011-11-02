@@ -1,7 +1,7 @@
 package pez.femto;
 import robocode.*;
 
-// By Peter StrÂšmberg, http://robowiki.dyndns.org/?PEZ
+// By Peter Stršmberg, http://robowiki.dyndns.org/?PEZ
 
 public class HaikuPoet extends AdvancedRobot {
     public void run() { 
