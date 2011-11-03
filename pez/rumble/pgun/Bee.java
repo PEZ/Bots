@@ -107,8 +107,8 @@ public class Bee extends Stinger {
 	
 	void initRound() {
 		BeeWave.initRound(robot);
-		System.out.println(BeeWave.guessors.toString());
-		System.out.println("Using: " + BeeWave.currentGuessor.echoStats());
+		//System.out.println(BeeWave.guessors.toString());
+		//System.out.println("Using: " + BeeWave.currentGuessor.echoStats());
 	}
 
 	void saveStats() {
@@ -136,7 +136,7 @@ public class Bee extends Stinger {
 }
 
 class BeeWave extends GunWave {
-	static final int BINS = 75;
+	static final int BINS = 115;
 	static final int MIDDLE_BIN = (BINS - 1) / 2;
 
 	static List<BeeWave> waves;
@@ -359,7 +359,9 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 		if (w.weight > 2.0) {
 			updateVRating(index, ((Integer)guesses.get(this)).intValue(), w);
 		}
-		registerVisit(index, w);
+		for (int i = Math.max(1, index - w.botWidth()), n = Math.min(BeeWave.BINS, index + w.botWidth()); i < n; i++) {
+			registerVisit(i, w);
+		}
 	}
 
 	int mostVisited(BeeWave w) {
