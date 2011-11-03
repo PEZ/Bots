@@ -136,7 +136,7 @@ public class Bee extends Stinger {
 }
 
 class BeeWave extends GunWave {
-	static final int BINS = 115;
+	static final int BINS = 125;
 	static final int MIDDLE_BIN = (BINS - 1) / 2;
 
 	static List<BeeWave> waves;
@@ -324,8 +324,8 @@ class BeeWave extends GunWave {
 abstract class Guessor implements Comparable<Object>, Serializable {
 	static final long serialVersionUID = 4;
 	static final int ACCEL_INDEXES = 3;
-	static final double[] DISTANCE_SLICES = { 150, 300, 450, 600 };
-	static final double[] DISTANCE_SLICES_FASTER = { 300, 500 };
+	static final double[] DISTANCE_SLICES = { 175, 300, 450, 600 };
+	static final double[] DISTANCE_SLICES_FASTER = { 175, 300, 500 };
 	static final double[] VELOCITY_SLICES = { 1, 3, 5, 7 };
 	static final double[] VELOCITY_SLICES_FASTER = { 2, 4, 6 };
 	static final double[] WALL_SLICES = { 0.15, 0.35, 0.55, 0.75 };
@@ -359,8 +359,13 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 		if (w.weight > 2.0) {
 			updateVRating(index, ((Integer)guesses.get(this)).intValue(), w);
 		}
-		for (int i = Math.max(1, index - w.botWidth()), n = Math.min(BeeWave.BINS, index + w.botWidth()); i < n; i++) {
-			registerVisit(i, w);
+		if (w.distanceSegment > 0) {
+			for (int i = Math.max(1, index - w.botWidth()), n = Math.min(BeeWave.BINS, index + w.botWidth()); i < n; i++) {
+				registerVisit(i, w);
+			}
+		}
+		else {
+			registerVisit(index, w);
 		}
 	}
 
