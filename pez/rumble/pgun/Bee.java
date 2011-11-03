@@ -499,7 +499,7 @@ class BeeAccumulator extends Guessor {
 			buffers[b][0]++;
 			for (int i = 1; i < BeeWave.BINS; i++) {
 				//buffers[b][i] += w.weight / (Math.pow(Math.abs(i - index) + 1, 1.5));
-				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], index == i ? w.weight : 0.0, 0.7);
+				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], index == i ? w.weight : 0.0, 50);
 			}
 		}
 	}
