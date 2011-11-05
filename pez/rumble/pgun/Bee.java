@@ -143,7 +143,6 @@ class BeeWave extends GunWave {
 	static List<BeeWave> bullets;
 
 	static BeeAccumulator BeeAccumulator;
-	static BeeReplacor BeeReplacor;
 	static List<Guessor> guessors;
 	static Guessor currentGuessor;
 	Map<Guessor, Integer> guesses = new HashMap<Guessor, Integer>();
@@ -335,8 +334,9 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	static final double[] WALL_SLICES_REVERSE = { 0.35, 0.7 };
 	static final double[] TIMER_SLICES = { 0.1, 0.3, 0.7, 1.2 };
 	static final double[] TIMER_SLICES_FASTER = { 0.1, 0.3, 0.7 };
-	//static final double[] ROLLING_DEPTHS = {0.7, 4, 10, 20, 50, 100, 500};
-	static final int RATING_UPDATE_ROUNDS = 1;
+	static final double[] ROLLING_DEPTHS = {0.7, 4, 10, 20, 50, 100, 500};
+
+	/*
 	static final int RATING_UPDATE_START = 5;
 	static final int RATING_UPDATE_STOP = 50;
 	static final double RATING_INCREMENT_THRESHOLD = 0.02;
@@ -346,6 +346,8 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	static final double BeeAccumulator_VRATING_BONUS = 10;
 	static final double BeeAccumulator_RATING_INCREMENT = 1;
 	static final double BeeReplacor_RATING_INCREMENT = 2;
+	*/
+	
 	double rating;
 	private long rBulletsFired;
 	private double rRating;
@@ -354,14 +356,14 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	transient private int guess;
 
 	abstract void registerVisit(int index, BeeWave w);
-	abstract double[][] buffers(BeeWave w);
+	abstract double[][][] buffers(BeeWave w);
 	abstract void incrementRating();
 
 	void registerVisit(BeeWave w, Map<Guessor, Integer> guesses) {
 		int index = Math.max(1, w.visitingIndex());
-		if (w.weight > 2.0) {
-			updateVRating(index, ((Integer)guesses.get(this)).intValue(), w);
-		}
+		//if (w.weight > 2.0) {
+		//	updateVRating(index, ((Integer)guesses.get(this)).intValue(), w);
+		//}
 		//if (w.distanceSegment > 1) {
 		//	for (int i = Math.max(1, index - w.botWidth()), n = Math.min(BeeWave.BINS, index + w.botWidth()); i < n; i++) {
 		//		registerVisit(i, w);
@@ -375,20 +377,22 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	int mostVisited(BeeWave w) {
 		int defaultIndex = BeeWave.MIDDLE_BIN + BeeWave.MIDDLE_BIN / 4;
 		double uses = 0;
-		double[][] buffers = buffers(w);
+		double[][][] buffers = buffers(w);
 		for (int b = 0; b < buffers.length; b++) {
-			uses += buffers[b][0];
+			uses += buffers[b][0][0];
 		}
 		if (uses < 1) {
 			return defaultIndex;
 		}
 		List<VisitsIndex> visitRanks = new ArrayList<VisitsIndex>();
-		for (int i = 1; i < BeeWave.BINS; i++) {
-			double visits = 0;
-			for (int b = 0; b < buffers.length; b++) {
-				visits += uses * buffers[b][i] / Math.max(1, buffers[b][0]);
+		for (int d = 0, nd = ROLLING_DEPTHS.length; d < nd; d++) {
+			for (int i = 1; i < BeeWave.BINS; i++) {
+				double visits = 0;
+				for (int b = 0; b < buffers.length; b++) {
+					visits += uses * buffers[b][d][i] / Math.max(1, buffers[b][d][0]);
+				}
+				visitRanks.add(new VisitsIndex(visits, i));
 			}
-			visitRanks.add(new VisitsIndex(visits, i));
 		}
 		Collections.sort(visitRanks);
 		return ((VisitsIndex)visitRanks.get(0)).index;
@@ -418,9 +422,9 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 		return w.hit(diff) ? 100 : 0;
 	}
 
-	void updateVRating(int index, int guess, BeeWave w) {
-		vRating = PUtils.rollingAvg(vRating, reward(hit(guess - index, w), w.distance), VRATING_ROLL_DEPTH);
-	}
+	//void updateVRating(int index, int guess, BeeWave w) {
+	//	vRating = PUtils.rollingAvg(vRating, reward(hit(guess - index, w), w.distance), VRATING_ROLL_DEPTH);
+	//}
 
 	double rRating() {
 		return rRating / rBulletsFired;
@@ -485,75 +489,36 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 
 class BeeAccumulator extends Guessor {
 	static final long serialVersionUID = 4;
-	private static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1][ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
-	private static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
+	private static double[][][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
+			[ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][ROLLING_DEPTHS.length + 1][BeeWave.BINS];
+	private static double[][][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][ROLLING_DEPTHS.length + 1][BeeWave.BINS];
 
 	BeeAccumulator() {
-		vRating = Guessor.VRATING_START + Guessor.BeeAccumulator_VRATING_BONUS;
+		//vRating = Guessor.VRATING_START + Guessor.BeeAccumulator_VRATING_BONUS;
 	}
 
 	void incrementRating() {
-		rating += Guessor.BeeAccumulator_RATING_INCREMENT;
+	//	rating += Guessor.BeeAccumulator_RATING_INCREMENT;
 	}
 
-	double[][] buffers(BeeWave w) {
-		return new double[][] {
+	double[][][] buffers(BeeWave w) {
+		return new double[][][] {
 				faster[w.distanceSegmentFaster][w.velocitySegmentFaster][w.accelSegment][w.vChangeSegmentFaster][w.wallSegmentFaster],
 				slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment],
 		};
 	}
 
 	void registerVisit(int index, BeeWave w) {
-		double[][] buffers = buffers(w);
-		for (int b = 0; b < buffers.length; b++) {
-			buffers[b][0]++;
-			for (int i = 1; i < BeeWave.BINS; i++) {
-				//buffers[b][i] += w.weight / (Math.pow(Math.abs(i - index) + 1, 1.5));
-				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], index == i ? w.weight : 0.0, 50);
-			}
-		}
-	}
-}
-
-class BeeReplacor extends Guessor {
-	//stat array 1:latvelocity = {2, 4, 6}distance = {250, 500}walldistance = {0.25, 0.5, 0.75}vchangetime = {.1, .4, 1.0)accel = 0/1/2 (changes of over .2, effectively same as Bee I think)
-	//stat array 2:advvelocity = {-2.5, 2.5}latvelocity = {1, 3, 5, 7}distance = {200, 400, 600}walldistance = {0.2, 0.5, 0.8}walldistancereverse = {0.5}accel = 0/1/2 ...vchangetime = {.1, .4, .7, 1.1, 1.5} 
-	static final long serialVersionUID = 4;
-	private static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1][ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
-	private static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
-
-	BeeReplacor() {
-		vRating = Guessor.VRATING_START;
-	}
-
-	void incrementRating() {
-		rating += Guessor.BeeReplacor_RATING_INCREMENT;
-	}
-
-	double[][] buffers(BeeWave w) {
-		return new double[][] {
-				faster[w.distanceSegmentFaster][w.velocitySegmentFaster][w.accelSegment][w.vChangeSegmentFaster][w.wallSegmentFaster],
-				slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment]
-		};
-	}
-
-	void registerHit(BeeWave w) {
-		double[][] buffers = buffers(w);
-		for (int b = 0; b < buffers.length; b++) {
-			buffers[b][0]++;
-			for (int i = 1; i < BeeWave.BINS; i++) {
-				buffers[b][i] = PUtils.rollingAvg(buffers[b][i], -buffers[b][i], 1);
-			}
-		}
-	}
-	
-	void registerVisit(int index, BeeWave w) {
-		double[][] buffers = buffers(w);
-		for (int b = 0; b < buffers.length; b++) {
-			buffers[b][0]++;
-			for (int i = 1; i < BeeWave.BINS; i++) {
-				buffers[b][i] = PUtils.rollingAvg(buffers[b][i], w.weight / (Math.pow(Math.abs(i - index) + 1, 1.5)), 3);
-			}
+		double[][][] buffers = buffers(w);
+		for (int d = 0, nd = ROLLING_DEPTHS.length; d < nd; d++) {
+			for (int b = 0; b < buffers.length; b++) {
+				buffers[b][d][0]++;
+				for (int i = 1; i < BeeWave.BINS; i++) {
+					//buffers[b][i] += w.weight / (Math.pow(Math.abs(i - index) + 1, 1.5));
+					buffers[b][d][i] =  (float)PUtils.rollingAvg(buffers[b][d][i], index == i ? w.weight : 0.0, ROLLING_DEPTHS[d]);
+				}
+			}			
 		}
 	}
 }
