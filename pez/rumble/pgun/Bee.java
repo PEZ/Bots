@@ -136,7 +136,7 @@ public class Bee extends Stinger {
 }
 
 class BeeWave extends GunWave {
-	static final int BINS = 95;
+	static final int BINS = 45;
 	static final int MIDDLE_BIN = (BINS - 1) / 2;
 
 	static List<BeeWave> waves;
@@ -335,6 +335,7 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	static final double[] WALL_SLICES_REVERSE = { 0.35, 0.7 };
 	static final double[] TIMER_SLICES = { 0.1, 0.3, 0.7, 1.2 };
 	static final double[] TIMER_SLICES_FASTER = { 0.1, 0.3, 0.7 };
+	//static final double[] ROLLING_DEPTHS = {0.7, 4, 10, 20, 50, 100, 500};
 	static final int RATING_UPDATE_ROUNDS = 1;
 	static final int RATING_UPDATE_START = 5;
 	static final int RATING_UPDATE_STOP = 50;
@@ -361,14 +362,14 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 		if (w.weight > 2.0) {
 			updateVRating(index, ((Integer)guesses.get(this)).intValue(), w);
 		}
-		if (w.distanceSegment > 1) {
-			for (int i = Math.max(1, index - w.botWidth()), n = Math.min(BeeWave.BINS, index + w.botWidth()); i < n; i++) {
-				registerVisit(i, w);
-			}
-		}
-		else {
+		//if (w.distanceSegment > 1) {
+		//	for (int i = Math.max(1, index - w.botWidth()), n = Math.min(BeeWave.BINS, index + w.botWidth()); i < n; i++) {
+		//		registerVisit(i, w);
+		//	}
+		//}
+		//else {
 			registerVisit(index, w);
-		}
+		//}
 	}
 
 	int mostVisited(BeeWave w) {
