@@ -48,9 +48,11 @@ public abstract class RumbleBot extends AdvancedRobot {
 			if (timeSinceScan++ > 1) {
 				setTurnRadarRightRadians(Double.POSITIVE_INFINITY); 
 			}
+			/*
 			if (getOthers() == 0) {
 				onScannedRobot(lastScanEvent);
 			}
+			*/
 			execute();
 		} while (true);
 	}
