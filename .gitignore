@@ -19,5 +19,8 @@
 .metadata
 /.classpath
 
-#PEZ bot colelcted data
+#PEZ bot collected data
 *.data
+
+#Other peoples bots
+/voidious
