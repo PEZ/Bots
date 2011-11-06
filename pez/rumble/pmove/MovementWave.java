@@ -206,6 +206,7 @@ public class MovementWave extends Wave {
 	void registerHit(float[] buffer, int index, double weight, double depth) {
 		for (int i = 0; i < getFactors(); i++) {
 			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], index == i ? weight : 0.0, depth);
+			//buffer[i] =  (float)PUtils.rollingAvg(buffer[i], Math.pow(Math.abs(i - index) + 1, 1.5), depth);
 		}
 	}
 
@@ -237,10 +238,10 @@ public class MovementWave extends Wave {
 	}
 
 	double danger(int index) {
-		return dangerUnWeighed(index) * dangerWeight();
+		return dangerUnWeighted(index) * dangerWeight();
 	}
 
-	public double dangerUnWeighed(int index) {
+	public double dangerUnWeighted(int index) {
 		float[] visits = visitCounts[distanceIndex][velocityIndex][accelIndex][vChangeIndex][wallIndex];
 		float[] visitsFast = visitCountsFast;
 		float[] visitsTimerWalls = visitCountsTimerWalls[distanceIndex][velocityIndex][vChangeIndex][wallIndex];

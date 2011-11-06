@@ -20,7 +20,7 @@ import java.awt.geom.*;
 public class Bee extends Stinger {
 	static final double WALL_MARGIN = 18;
 	static final double MAX_BULLET_POWER = 3.0;
-	static final double BULLET_POWER = 1.9;
+	static final double BULLET_POWER = 2.1;
 
 	Point2D enemyLocation = new Point2D.Double();
 	double lastVelocity;
@@ -334,7 +334,8 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	static final double[] WALL_SLICES_REVERSE = { 0.35, 0.7 };
 	static final double[] TIMER_SLICES = { 0.1, 0.3, 0.7, 1.2 };
 	static final double[] TIMER_SLICES_FASTER = { 0.1, 0.3, 0.7 };
-	static final double[] ROLLING_DEPTHS = {0.7, 4, 10, 20, 50, 100, 500};
+	static final double[] ROLLING_DEPTHS = {0.7, 10, 20, 50, 75, 100, 200, 500};
+	static final int BUFFERS = 3;
 
 	/*
 	static final int RATING_UPDATE_START = 5;
@@ -376,12 +377,16 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 
 	int mostVisited(BeeWave w) {
 		int defaultIndex = BeeWave.MIDDLE_BIN + BeeWave.MIDDLE_BIN / 4;
-		double uses = 0;
+		int totUses = 0;
+		double uses[][] = new double[BUFFERS][ROLLING_DEPTHS.length + 1];
 		double[][][] buffers = buffers(w);
-		for (int b = 0; b < buffers.length; b++) {
-			uses += buffers[b][0][0];
+		for (int d = 0, nd = ROLLING_DEPTHS.length; d < nd; d++) {
+			for (int b = 0; b < buffers.length; b++) {
+				totUses += buffers[b][d][0];
+				uses[b][d] += buffers[b][d][0];
+			}
 		}
-		if (uses < 1) {
+		if (totUses < 1){
 			return defaultIndex;
 		}
 		List<VisitsIndex> visitRanks = new ArrayList<VisitsIndex>();
@@ -389,7 +394,8 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 			for (int i = 1; i < BeeWave.BINS; i++) {
 				double visits = 0;
 				for (int b = 0; b < buffers.length; b++) {
-					visits += uses * buffers[b][d][i] / Math.max(1, buffers[b][d][0]);
+					visits += uses[b][d] * buffers[b][d][i] / Math.max(1, buffers[b][d][0]);
+					//visits += buffers[b][d][i];
 				}
 				visitRanks.add(new VisitsIndex(visits, i));
 			}
@@ -489,6 +495,8 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 
 class BeeAccumulator extends Guessor {
 	static final long serialVersionUID = 4;
+	private static double[][][][] distVel = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
+			[ROLLING_DEPTHS.length + 1][BeeWave.BINS];
 	private static double[][][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][ROLLING_DEPTHS.length + 1][BeeWave.BINS];
 	private static double[][][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
@@ -504,6 +512,7 @@ class BeeAccumulator extends Guessor {
 
 	double[][][] buffers(BeeWave w) {
 		return new double[][][] {
+				distVel[w.distanceSegmentFaster][w.velocitySegmentFaster],
 				faster[w.distanceSegmentFaster][w.velocitySegmentFaster][w.accelSegment][w.vChangeSegmentFaster][w.wallSegmentFaster],
 				slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment],
 		};
@@ -516,7 +525,8 @@ class BeeAccumulator extends Guessor {
 				buffers[b][d][0]++;
 				for (int i = 1; i < BeeWave.BINS; i++) {
 					//buffers[b][i] += w.weight / (Math.pow(Math.abs(i - index) + 1, 1.5));
-					buffers[b][d][i] =  (float)PUtils.rollingAvg(buffers[b][d][i], index == i ? w.weight : 0.0, ROLLING_DEPTHS[d]);
+					buffers[b][d][i] =  (float)PUtils.rollingAvg(buffers[b][d][i],
+							w.weight / Math.pow(Math.abs(i - index) + 1, 1.5), ROLLING_DEPTHS[d]);
 				}
 			}			
 		}
