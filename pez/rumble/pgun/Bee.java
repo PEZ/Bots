@@ -3,6 +3,8 @@ import pez.rumble.RumbleBot;
 import pez.rumble.utils.*;
 import robocode.*;
 import robocode.util.Utils;
+import sun.security.x509.AVA;
+
 import java.io.*;
 import java.util.*;
 import java.util.zip.*;
@@ -125,6 +127,9 @@ public class Bee extends Stinger {
 	
 	public void roundOver() {
 		if (PUtils.isLastRound(robot)) {
+			if (!isTC) {
+				BeeWave.saveStats(robot);
+			}
 			System.out.println("Bzzz bzzz. Over and out!");
 		}
 	}
@@ -183,9 +188,7 @@ class BeeWave extends GunWave {
 		waves = new ArrayList<BeeWave>();
 		bullets = new ArrayList<BeeWave>();
 		if (guessors == null) {
-			guessors = new ArrayList<Guessor>();
-			guessors.add(BeeAccumulator = new BeeAccumulator());
-			guessors.add(BeeReplacor = new BeeReplacor());
+			readStats(robot);
 		}
 		for (int i = 0, n = guessors.size(); i < n; i++) {
 			((Guessor)guessors.get(i)).rounds++;
@@ -255,30 +258,91 @@ class BeeWave extends GunWave {
 		return PUtils.maxEscapeAngle(bulletVelocity) * 1.4;
 	}
 
-	static void initGuessors(AdvancedRobot robot) {
+	static void initGuessors() {
 		guessors = new ArrayList<Guessor>();
 		guessors.add(BeeAccumulator = new BeeAccumulator());
 		guessors.add(BeeReplacor = new BeeReplacor());
 	}
+	
+	static Map<String, List<Guessor>> readEnemies(AdvancedRobot robot) {
+		Map<String, List<Guessor>> enemies;
+		try {
+			enemies = (HashMap<String, List<Guessor>>)(new ObjectInputStream(new GZIPInputStream(new FileInputStream(robot.getDataFile("vgstats.gz"))))).readObject();
+			System.out.println("Read vgstats for " + enemies.size() + " enemies");
+		} catch (Exception e) {
+			enemies = new HashMap<String, List<Guessor>>();
+			System.out.println("Couldn't read vgstats: " + e.getMessage());
+		}
+		return enemies;
+	}
+
+	static void writeEnemies(AdvancedRobot robot, Map<String, List<Guessor>> enemies, String enemyName) {
+		try {
+			ObjectOutputStream oos = new ObjectOutputStream(new GZIPOutputStream(new RobocodeFileOutputStream(robot.getDataFile("vgstats.gz"))));
+			oos.writeObject(enemies);
+			oos.close();
+			System.out.println("Wrote vgstats for " + enemyName + " (" + enemies.size() + " enemies on file)");
+		} catch (IOException e) {
+			System.out.println("Couldn't write vgstats: " + e.getMessage());
+		}
+	}
+
+	static void readStats(AdvancedRobot robot) {
+		if (!Bee.isTC) {
+			Map<String, List<Guessor>> enemies = readEnemies(robot);
+			guessors = (ArrayList<Guessor>)enemies.get(Bee.enemyName);
+		}
+		if (guessors != null) {
+			BeeAccumulator = (BeeAccumulator)guessors.get(0);
+			BeeReplacor = (BeeReplacor)guessors.get(1);
+			System.out.println("Fetched Guessor data for enemy: " + Bee.enemyName + "\n\t" + BeeWave.guessors.toString());
+		}
+		else {
+			System.out.println("No vgstats for " + Bee.enemyName + " on file yet.");
+			initGuessors();
+		}
+	}
+
+	static void saveStats(AdvancedRobot robot) {
+		Map<String, List<Guessor>> enemies = readEnemies(robot);
+		List<Guessor> orderedGuessors = new ArrayList<Guessor>();
+		orderedGuessors.add(BeeAccumulator);
+		orderedGuessors.add(BeeReplacor);
+		enemies.put(Bee.enemyName, orderedGuessors);
+		writeEnemies(robot, enemies, Bee.enemyName);
+		logVGStats(enemies.keySet().toArray(), enemies.values().toArray());
+	}
+
+	static void logVGStats(Object[] names, Object[] data) {
+		System.out.println("Name" + "\t" + Guessor.logHeader("A") + "\t" + Guessor.logHeader("B") + "\t" + "Selected");
+		for (int i = 0, il = data.length; i < il; i++) {
+			System.out.print(names[i] + "\t");
+			List<Guessor> guessors = (ArrayList<Guessor>)data[i];
+			for (int j = 0, jl = guessors.size(); j < jl; j++) {
+				Guessor g = (Guessor)guessors.get(j);
+				System.out.print(g.logRow() + "\t");
+			}
+			Collections.sort(guessors);
+			System.out.println(((Guessor)guessors.get(0)).name());
+		}
+	}
 }
 
 abstract class Guessor implements Comparable<Object>, Serializable {
-	static final long serialVersionUID = 4;
-	static final int ACCEL_INDEXES = 3;
-	static final double[] DISTANCE_SLICES = { 125, 300, 450, 600 };
-	static final double[] DISTANCE_SLICES_FASTER = { 125, 300, 500 };
-	static final double[] VELOCITY_SLICES = { 1, 3, 5, 7 };
-	static final double[] VELOCITY_SLICES_FASTER = { 2, 4, 6 };
-	static final double[] WALL_SLICES = { 0.15, 0.35, 0.55, 0.75 };
-	static final double[] WALL_SLICES_FASTER = { 0.25, 0.5, 0.75 };
-	static final double[] WALL_SLICES_REVERSE = { 0.35, 0.7 };
-	static final double[] TIMER_SLICES = {.05, .15, .35, .45}; //{ 0.1, 0.3, 0.7, 1.2 };
-	static final double[] TIMER_SLICES_FASTER = {.05, .15, .45}; //{ 0.1, 0.3, 0.7 };
+	static final long serialVersionUID = 5;
+	transient static final int ACCEL_INDEXES = 3;
+	transient static final double[] DISTANCE_SLICES = { 125, 300, 450, 600 };
+	transient static final double[] DISTANCE_SLICES_FASTER = { 125, 300, 500 };
+	transient static final double[] VELOCITY_SLICES = { 1, 3, 5, 7 };
+	transient static final double[] VELOCITY_SLICES_FASTER = { 2, 4, 6 };
+	transient static final double[] WALL_SLICES = { 0.15, 0.35, 0.55, 0.75 };
+	transient static final double[] WALL_SLICES_FASTER = { 0.25, 0.5, 0.75 };
+	transient static final double[] WALL_SLICES_REVERSE = { 0.35, 0.7 };
+	transient static final double[] TIMER_SLICES = {.05, .15, .35, .45}; //{ 0.1, 0.3, 0.7, 1.2 };
+	transient static final double[] TIMER_SLICES_FASTER = {.05, .15, .45}; //{ 0.1, 0.3, 0.7 };
 
-	double rating;
 	private long rBulletsFired;
 	private double rRating;
-	protected double vRating;
 	int rounds;
 	transient private int guess;
 
@@ -382,13 +446,11 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	}
 
 	String echoStats() {
-		return name() + " vr" + logNum(vRating) +
-		" rr" + logNum(rRating);
+		return name() + " rr" + logNum(rRating);
 	}
 
 	static String logHeader(String tag) {
 		return "Rounds " + tag + "\t" + 
-		"vRating " + tag + "\t" + 
 		"rRating " + tag;
 	}
 
@@ -398,7 +460,6 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 
 	String logRow() {
 		return rounds + "\t" +
-		logNum(vRating) + "\t" +
 		logNum(rRating);
 	}
 
@@ -408,7 +469,7 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 }
 
 class BeeAccumulator extends Guessor {
-	static final long serialVersionUID = 4;
+	static final long serialVersionUID = 5;
 	static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
 	static double[][][] distVel = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][BeeWave.BINS];
@@ -416,15 +477,15 @@ class BeeAccumulator extends Guessor {
 			[WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
 	static double[][][][] accelWall = new double[ACCEL_INDEXES][WALL_SLICES.length + 1]
 			[WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
-	static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+	transient static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
-	static double[][][][][][][] distVelWallTimers = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+	transient static double[][][][][][][] distVelWallTimers = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][WALL_SLICES.length + 1][TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
-	static double[][][][] velTimers = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
+	transient static double[][][][] velTimers = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][BeeWave.BINS];
-	static double[][][][] accelTimers = new double[ACCEL_INDEXES][TIMER_SLICES.length + 1]
+	transient static double[][][][] accelTimers = new double[ACCEL_INDEXES][TIMER_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][BeeWave.BINS];
-	static double[][][][][][][][][] all = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+	transient static double[][][][][][][][][] all = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1]
 			[TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
 
@@ -457,23 +518,23 @@ class BeeAccumulator extends Guessor {
 }
 
 class BeeReplacor extends Guessor {
-	static final long serialVersionUID = 4;
+	static final long serialVersionUID = 5;
 	static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
 	static double[][][] distVel = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][BeeWave.BINS];
-	static double[][][][] distWall = new double[DISTANCE_SLICES.length + 1][WALL_SLICES.length + 1]
+	transient static double[][][][] distWall = new double[DISTANCE_SLICES.length + 1][WALL_SLICES.length + 1]
 			[WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
-	static double[][][][] accelWall = new double[ACCEL_INDEXES][WALL_SLICES.length + 1]
+	transient static double[][][][] accelWall = new double[ACCEL_INDEXES][WALL_SLICES.length + 1]
 			[WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
-	static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+	transient static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
-	static double[][][][][][][] distVelWallTimers = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+	transient static double[][][][][][][] distVelWallTimers = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][WALL_SLICES.length + 1][TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
-	static double[][][][] velTimers = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
+	transient static double[][][][] velTimers = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][BeeWave.BINS];
-	static double[][][][] accelTimers = new double[ACCEL_INDEXES][TIMER_SLICES.length + 1]
+	transient static double[][][][] accelTimers = new double[ACCEL_INDEXES][TIMER_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][BeeWave.BINS];
-	static double[][][][][][][][][] all = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+	transient static double[][][][][][][][][] all = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1]
 			[TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
 
