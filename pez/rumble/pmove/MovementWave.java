@@ -17,8 +17,8 @@ public class MovementWave extends Wave {
 	static final double[] APPROACH_SLICES = { -3, 1, 3};
 	static final double[] DISTANCE_SLICES = { 300, 450, 550, 650 };
 	static final double[] VELOCITY_SLICES = { 1, 3, 5, 7 };
-	static final double[] WALL_SLICES = { 0.1, 0.2, 0.35, 0.55 };
-	static final double[] WALL_SLICES_REVERSE = { 0.35, 0.7 };
+	static final double[] WALL_SLICES = { 0.15, 0.35, 0.55, 0.75 };
+	static final double[] WALL_SLICES_REVERSE = { 0.15, 0.35, 0.8 };
 	static final double[] TIMER_SLICES = { 0.15, 0.3, 0.7, 1.3 };
 	static final int APPROACH_INDEXES = APPROACH_SLICES.length + 1;
 	static final int DISTANCE_INDEXES = DISTANCE_SLICES.length + 1;

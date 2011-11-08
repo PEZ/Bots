@@ -174,10 +174,10 @@ public abstract class Wave {
 		for (double d = 0; d < 2; d += 0.01) {
 			if (!fieldRectangle.contains(PUtils.project(gunLocation,
 					startBearing + middleBin * bearingDirection * direction * d, targetDistance))) {
-				return d;
+				return d / 2.0;
 			}
 		}
-		return 2;
+		return 1.0;
 	}
 
 	public static Wave findClosest(List _waves, Point2D location) {

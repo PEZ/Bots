@@ -3,7 +3,6 @@ import pez.rumble.RumbleBot;
 import pez.rumble.utils.*;
 import robocode.*;
 import robocode.util.Utils;
-import sun.security.x509.AVA;
 
 import java.io.*;
 import java.util.*;
@@ -22,7 +21,7 @@ import java.awt.geom.*;
 public class Bee extends Stinger {
 	static final double WALL_MARGIN = 18;
 	static final double MAX_BULLET_POWER = 3.0;
-	static final double BULLET_POWER = 2.1;
+	static final double BULLET_POWER = 1.9;
 
 	Point2D enemyLocation = new Point2D.Double();
 	double lastVelocity;
@@ -329,7 +328,7 @@ class BeeWave extends GunWave {
 }
 
 abstract class Guessor implements Comparable<Object>, Serializable {
-	static final long serialVersionUID = 5;
+	static final long serialVersionUID = 7;
 	transient static final int ACCEL_INDEXES = 3;
 	transient static final double[] DISTANCE_SLICES = { 125, 300, 450, 600 };
 	transient static final double[] DISTANCE_SLICES_FASTER = { 125, 300, 500 };
@@ -337,7 +336,7 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	transient static final double[] VELOCITY_SLICES_FASTER = { 2, 4, 6 };
 	transient static final double[] WALL_SLICES = { 0.15, 0.35, 0.55, 0.75 };
 	transient static final double[] WALL_SLICES_FASTER = { 0.25, 0.5, 0.75 };
-	transient static final double[] WALL_SLICES_REVERSE = { 0.35, 0.7 };
+	transient static final double[] WALL_SLICES_REVERSE = { 0.15, 0.35, 0.8 };
 	transient static final double[] TIMER_SLICES = {.05, .15, .35, .45}; //{ 0.1, 0.3, 0.7, 1.2 };
 	transient static final double[] TIMER_SLICES_FASTER = {.05, .15, .45}; //{ 0.1, 0.3, 0.7 };
 
@@ -469,7 +468,7 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 }
 
 class BeeAccumulator extends Guessor {
-	static final long serialVersionUID = 5;
+	static final long serialVersionUID = 7;
 	static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
 	static double[][][] distVel = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][BeeWave.BINS];
@@ -518,7 +517,7 @@ class BeeAccumulator extends Guessor {
 }
 
 class BeeReplacor extends Guessor {
-	static final long serialVersionUID = 5;
+	static final long serialVersionUID = 7;
 	static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
 	static double[][][] distVel = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][BeeWave.BINS];
