@@ -66,7 +66,7 @@ public class WaveGrapher{
 					wave.distanceFromGun());
 			dots[i].setPosition((float)dot.getX(), (float)dot.getY());
 			dots[i].setFillColor(Color.BLUE);
-			dots[i].setSize((float)wave.dangerUnWeighed(i) / 7.0f);
+			dots[i].setSize((float)wave.dangerUnWeighted(i) / 7.0f);
 		}
 	}
 

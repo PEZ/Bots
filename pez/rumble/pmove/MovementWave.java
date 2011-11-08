@@ -48,7 +48,7 @@ public class MovementWave extends Wave {
 	static float[][][] hitCountsDistanceVelocity;
 	static float[][] hitCountsVelocity;
 	static float[] fastHitCounts;
-	static float[] randomCounts;
+	//static float[] randomCounts;
 
 	static double rangeHits;
 	static double dangerForward;
@@ -98,7 +98,7 @@ public class MovementWave extends Wave {
 		hitCountsVelocity = new float[VELOCITY_INDEXES][getFactors()];
 		fastHitCounts = new float[getFactors()];
 		fastHitCounts[getMiddleFactor()] = 50;
-		randomCounts = new float[getFactors()];
+		//randomCounts = new float[getFactors()];
 	}
 
 	static void init() {
@@ -129,10 +129,10 @@ public class MovementWave extends Wave {
 			if (wave.passed(10)) {
 				if (!wave.visitRegistered) {
 					if (wave.isSurfable) {
-						wave.registerVisit(100, 80);
+						wave.registerVisit(2, 0.7);
 					}
 					else {
-						wave.registerVisit(50, 100);						
+						wave.registerVisit(0.4, 0.7);						
 					}
 					wave.visitRegistered = true;
 				}
@@ -173,18 +173,18 @@ public class MovementWave extends Wave {
 		float[] visitsVelocityApproach = visitCountsVelocityApproach[velocityIndex][approachIndex];
 		float[] visitsDistanceVelocity = visitCountsDistanceVelocity[distanceIndex][velocityIndex];
 		float[] visitsVelocity = visitCountsVelocity[velocityIndex];
-		registerHit(visits, index, 100.0, 1000.0);
-		registerHit(visitsFast, index, 100.0, 1000.0);
-		registerHit(visitsTimerWalls, index, 100.0, 1000.0);
-		registerHit(visitsTimer, index, 100.0, 1000.0);
-		registerHit(visitsDistanceVelocityWalls, index, 100.0, 1000.0);
-		registerHit(visitsWalls, index, 100.0, 1000.0);
-		registerHit(visitsDVA, index, 100.0, 1000.0);
-		registerHit(visitsVelocityAccel, index, 100.0, 1000.0);
-		registerHit(visitsVelocityApproach, index, 100.0, 1000.0);
-		registerHit(visitsDistanceVelocity, index, 100.0, 1000.0);
-		registerHit(visitsVelocity, index, 100.0, 1000.0);
-		registerHit(randomCounts, (int)(Math.random() * (getFactors() - 1) + 1), PUtils.minMax(Math.pow(hitRate() * 2.1, 2), 0, 60), 10.0);
+		registerHit(visits, index, weight, depth);
+		registerHit(visitsFast, index, weight, depth);
+		registerHit(visitsTimerWalls, index, weight, depth);
+		registerHit(visitsTimer, index, weight, depth);
+		registerHit(visitsDistanceVelocityWalls, index, weight, depth);
+		registerHit(visitsWalls, index, weight, depth);
+		registerHit(visitsDVA, index, weight, depth);
+		registerHit(visitsVelocityAccel, index, weight, depth);
+		registerHit(visitsVelocityApproach, index, weight, depth);
+		registerHit(visitsDistanceVelocity, index, weight, depth);
+		registerHit(visitsVelocity, index, weight, depth);
+		//registerHit(randomCounts, (int)(Math.random() * (getFactors() - 1) + 1), PUtils.minMax(Math.pow(hitRate() * 2.1, 2), 0, 60), 10.0);
 	}
 
 	static void registerHit(Bullet bullet) {
@@ -205,7 +205,7 @@ public class MovementWave extends Wave {
 
 	void registerHit(float[] buffer, int index, double weight, double depth) {
 		for (int i = 0; i < getFactors(); i++) {
-			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], index == i ? weight : 0.0, depth);
+			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], weight / Math.pow(Math.abs(i - index) + 1, 2), depth);
 			//buffer[i] =  (float)PUtils.rollingAvg(buffer[i], Math.pow(Math.abs(i - index) + 1, 1.5), depth);
 		}
 	}
@@ -221,16 +221,16 @@ public class MovementWave extends Wave {
 		float[] hitsDistanceVelocity = hitCountsDistanceVelocity[distanceIndex][velocityIndex];
 		float[] hitsVelocity = hitCountsVelocity[velocityIndex];
 		float[] fastHits = fastHitCounts;
-		registerHit(hitsTimerWalls, index, 103.0, 1.0);
-		registerHit(hitsTimer, index, 103.0, 1.0);
-		registerHit(hitsDistanceVelocityWalls, index, 103.0, 1.0);
-		registerHit(hitsWalls, index, 103.0, 1.0);
-		registerHit(hitsDVA, index, 103.0, 1.0);
-		registerHit(hitsVelocityAccel, index, 103.0, 1.0);
-		registerHit(hitsVelocityApproach, index, 103.0, 1.0);
-		registerHit(hitsDistanceVelocity, index, 103.0, 1.0);
-		registerHit(hitsVelocity, index, 103.0, 1.0);
-		registerHit(fastHits, index, 103.0, 1.0);
+		registerHit(hitsTimerWalls, index, 10, 0.7);
+		registerHit(hitsTimer, index, 10, 0.7);
+		registerHit(hitsDistanceVelocityWalls, index, 10, 0.7);
+		registerHit(hitsWalls, index, 10, 0.7);
+		registerHit(hitsDVA, index, 10, 0.7);
+		registerHit(hitsVelocityAccel, index, 10, 0.7);
+		registerHit(hitsVelocityApproach, index, 10, 0.7);
+		registerHit(hitsDistanceVelocity, index, 10, 0.7);
+		registerHit(hitsVelocity, index, 10, 0.7);
+		registerHit(fastHits, index, 10, 0.7);
 	}
 
 	double danger(Point2D destination) {
