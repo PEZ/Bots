@@ -102,7 +102,7 @@ public class Bee extends Stinger {
 		}
 		BeeWave.updateWaves();
 
-		double guessedBearing = nextBearing + orbitDirection * (wave.mostVisited() - BeeWave.MIDDLE_BIN - 1);
+		double guessedBearing = nextBearing + orbitDirection * (wave.mostVisited() - BeeWave.MIDDLE_BIN);
 		robot.setTurnGunRightRadians(Utils.normalRelativeAngle(guessedBearing - robot.getGunHeadingRadians()));
 		if (isTC || (robot.getEnergy() >= 0.3 || e.getEnergy() < robot.getEnergy() / 5 || distance < 120)) {
 			if ((robot.getTime() > 50 || robot.enemyHasFired) &&

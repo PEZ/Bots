@@ -11,7 +11,7 @@ import robocode.AdvancedRobot;
 import robocode.Bullet;
 
 public class MovementWave extends Wave {
-	private static final int FACTORS = 25;
+	private static final int FACTORS = 31;
 	static final int ACCEL_INDEXES = 3;
 	private static final int MIDDLE_FACTOR = (getFactors() - 1) / 2;
 	static final double[] APPROACH_SLICES = { -3, 1, 3};
@@ -126,7 +126,7 @@ public class MovementWave extends Wave {
 		for (int i = 0, n = waves.size(); i < n; i++) {
 			MovementWave wave = (MovementWave)waves.get(i);
 			wave.setDistanceFromGun((robot.getTime() - wave.startTime) * wave.getBulletVelocity());
-			if (wave.passed(10)) {
+			if (wave.passed(4)) {
 				if (!wave.visitRegistered) {
 					if (wave.isSurfable) {
 						wave.registerVisit(2, 0.7);

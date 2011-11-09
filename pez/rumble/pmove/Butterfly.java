@@ -26,7 +26,7 @@ public class Butterfly {
 
 	static final double MAX_WALL_SMOOTH_TRIES = 175;
 	static final double WALL_MARGIN = 20;
-	static final double DEFAULT_BLIND_MANS_STICK = 80;
+	static final double DEFAULT_BLIND_MANS_STICK = 120;
 
 	static public double wallDistance;
 	static Rectangle2D fieldRectangle;
