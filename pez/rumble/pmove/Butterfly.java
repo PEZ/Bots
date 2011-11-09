@@ -26,7 +26,7 @@ public class Butterfly {
 
 	static final double MAX_WALL_SMOOTH_TRIES = 175;
 	static final double WALL_MARGIN = 20;
-	static final double DEFAULT_BLIND_MANS_STICK = 120;
+	static final double DEFAULT_BLIND_MANS_STICK = 80;
 
 	static public double wallDistance;
 	static Rectangle2D fieldRectangle;
@@ -73,7 +73,7 @@ public class Butterfly {
 			fieldRectangle = PUtils.fieldRectangle(robot, 70);
 		}
 		MovementWave wave = new MovementWave(robot, this);
-		wave.startTime = robot.getTime() - 2;
+		wave.startTime = robot.getTime() - 1;
 
 		double wallDamage = 0;
 		if (Math.abs(e.getVelocity()) == 0 && Math.abs(enemyVelocity) > 2.0) {
@@ -195,12 +195,14 @@ public class Butterfly {
 		}
 		Point2D destination = forward.location;
 		double wantedVelocity = MAX_VELOCITY;
+		/*
 		if (MovementWave.hitsTaken == 0 && robot.getEnergy() > 25 && ((roundsLeft < 6 && enemyFirePower < 0.3) || (roundsLeft < 3 && enemyFirePower < (3.01 - roundsLeft)))) {
 			if (!isMC) {
 				wantedVelocity = 0;
 			}
 		}
-		else if (enemyEnergy > 0 && !RumbleBot.enemyIsRammer() && MovementWave.bullets.size() == 0) {
+		*/
+		if (enemyEnergy > 0 && !RumbleBot.enemyIsRammer() && MovementWave.bullets.size() == 0) {
 			if (enemyLocation.distance(reverse.location) / enemyLocation.distance(forward.location) > 1.03) {
 				destination = reverse.location;
 			}
@@ -229,7 +231,8 @@ public class Butterfly {
 		double blindStick = RumbleBot.enemyIsRammer() ? PUtils.minMax(enemyDistance / 1.7, 40, DEFAULT_BLIND_MANS_STICK) : DEFAULT_BLIND_MANS_STICK;
 		double smoothing = 0;
 		while (!fieldRectangle.contains(destination = PUtils.project(location,
-				PUtils.absoluteBearing(location, orbitCenter) - direction * ((evasion - smoothing / 100) * Math.PI / 2), blindStick)) && smoothing < MAX_WALL_SMOOTH_TRIES) {
+				PUtils.absoluteBearing(location, orbitCenter) - direction *
+				 ((evasion - smoothing / 100) * Math.PI / 2), blindStick)) && smoothing < MAX_WALL_SMOOTH_TRIES) {
 			smoothing += 5;
 		}
 		return new Move(destination, smoothing, evasion, distance, destination.distance(enemyLocation));
@@ -319,6 +322,10 @@ public class Butterfly {
 
 	public void onPaint(Graphics2D g) {
 		WaveGrapher.onPaint(g);
+	}
+
+	public void roundOver() {
+		WaveGrapher.removeAll();
 	}
 }
 

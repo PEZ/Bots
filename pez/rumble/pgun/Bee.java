@@ -102,11 +102,11 @@ public class Bee extends Stinger {
 		}
 		BeeWave.updateWaves();
 
-		double guessedBearing = nextBearing + orbitDirection * (wave.mostVisited() - BeeWave.MIDDLE_BIN);
+		double guessedBearing = nextBearing + orbitDirection * (wave.mostVisited() - BeeWave.MIDDLE_BIN - 1);
 		robot.setTurnGunRightRadians(Utils.normalRelativeAngle(guessedBearing - robot.getGunHeadingRadians()));
 		if (isTC || (robot.getEnergy() >= 0.3 || e.getEnergy() < robot.getEnergy() / 5 || distance < 120)) {
 			if ((robot.getTime() > 50 || robot.enemyHasFired) &&
-				Math.abs(robot.getGunTurnRemainingRadians()) < PUtils.botWidthAngle(distance) / 2 &&
+				Math.abs(robot.getGunTurnRemainingRadians()) < PUtils.botWidthAngle(distance) / 2 && !isMC &&
 				robot.setFireBullet(bulletPower) != null &&
 				lastWave != null) {
 					lastWave.weight = 5;
@@ -126,7 +126,7 @@ public class Bee extends Stinger {
 	
 	public void roundOver() {
 		if (PUtils.isLastRound(robot)) {
-			if (!isTC) {
+			if (false && !isTC) {
 				BeeWave.saveStats(robot);
 			}
 			System.out.println("Bzzz bzzz. Over and out!");
@@ -287,7 +287,7 @@ class BeeWave extends GunWave {
 	}
 
 	static void readStats(AdvancedRobot robot) {
-		if (!Bee.isTC) {
+		if (false && !Bee.isTC) {
 			Map<String, List<Guessor>> enemies = readEnemies(robot);
 			guessors = (ArrayList<Guessor>)enemies.get(Bee.enemyName);
 		}

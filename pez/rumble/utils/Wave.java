@@ -58,7 +58,7 @@ public abstract class Wave {
 
 	public int visitingIndex(double bearing) {
 		return (int)PUtils.minMax(
-				Math.round(((Utils.normalRelativeAngle(bearing - startBearing)) / bearingDirection) + middleBin), 1, numBins - 1);
+				Math.round(((Utils.normalRelativeAngle(bearing - startBearing)) / bearingDirection) + middleBin + 1), 1, numBins - 1);
 	}
 
 	public double maxEscapeAngle() {

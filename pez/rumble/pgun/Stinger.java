@@ -16,6 +16,7 @@ import java.awt.geom.*;
 
 public abstract class Stinger {
 	public static boolean isTC = false; // TargetingChallenge
+	public static boolean isMC = false; // MovementChallenge
 
 	static final double WALL_MARGIN = 18;
 	static final double MAX_BULLET_POWER = 3.0;

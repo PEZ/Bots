@@ -96,6 +96,10 @@ public class WaveGrapher{
 		renderer.remove(stopDestination);
 	}
 	
+	public static void removeAll() {
+		renderer.removeAll();
+	}
+	
 	static GRectangle forwardRect;
 	static GRectangle stopRect;
 	static GRectangle reverseRect;
@@ -140,6 +144,10 @@ class GRenderer {
 		for (IRenderElement element : elements) {
 			element.render(g);
 		}
+	}
+	
+	void removeAll() {
+		elements.removeAll(elements);		
 	}
 }
 

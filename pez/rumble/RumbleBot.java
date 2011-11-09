@@ -38,6 +38,7 @@ public abstract class RumbleBot extends AdvancedRobot {
 
 	public void run() {
 		Stinger.isTC = isTC;
+		Stinger.isMC = isMC;
 		Butterfly.isMC = isMC;
 		Butterfly.doGL = doGL;
 		setAdjustRadarForGunTurn(true);
@@ -70,9 +71,7 @@ public abstract class RumbleBot extends AdvancedRobot {
 		if (!isTC) {
 			floater.onScannedRobot(e);
 		}
-		if (!isMC) {
-			stinger.onScannedRobot(e);
-		}
+		stinger.onScannedRobot(e);
 	}
 
 	public void onHitByBullet(HitByBulletEvent e) {
@@ -90,11 +89,13 @@ public abstract class RumbleBot extends AdvancedRobot {
 
 	public void onWin(WinEvent e) {
 		stinger.roundOver();
+		floater.roundOver();
 		wins++;
 	}
 
 	public void onDeath(DeathEvent e) {
 		stinger.roundOver();
+		floater.roundOver();
 	}
 
 	public void onSkippedTurn(SkippedTurnEvent e) {
