@@ -14,6 +14,7 @@
 *.DS_Store
 *.swp
 *.out
+*.orig
 
 #eclipse stuff
 .metadata

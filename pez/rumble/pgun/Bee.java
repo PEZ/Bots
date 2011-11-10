@@ -334,9 +334,9 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	transient static final double[] DISTANCE_SLICES_FASTER = { 125, 300, 500 };
 	transient static final double[] VELOCITY_SLICES = { 1, 3, 5, 7 };
 	transient static final double[] VELOCITY_SLICES_FASTER = { 2, 4, 6 };
-	transient static final double[] WALL_SLICES = { 0.15, 0.35, 0.55, 0.75 };
-	transient static final double[] WALL_SLICES_FASTER = { 0.25, 0.5, 0.75 };
-	transient static final double[] WALL_SLICES_REVERSE = { 0.15, 0.35, 0.8 };
+	transient static final double[] WALL_SLICES = { 0.15, 0.35, 0.65, 0.99 };
+	transient static final double[] WALL_SLICES_FASTER = { 0.35, 0.99 };
+	transient static final double[] WALL_SLICES_REVERSE = { 0.15, 0.35, 0.99 };
 	transient static final double[] TIMER_SLICES = {.05, .15, .35, .45}; //{ 0.1, 0.3, 0.7, 1.2 };
 	transient static final double[] TIMER_SLICES_FASTER = {.05, .15, .45}; //{ 0.1, 0.3, 0.7 };
 
@@ -377,9 +377,7 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 		for (int i = 1; i < BeeWave.BINS; i++) {
 			double visits = 0;
 			for (int b = 0; b < buffers.length; b++) {
-				if (buffers[b][0] > 0) {
-					visits += uses * buffers[b][i] / buffers[b][0];
-				}
+				visits += uses * buffers[b][i] / Math.pow(Math.max(1, buffers[b][0]), 1.05);
 			}
 			visitRanks.add(new VisitsIndex(visits, i));
 		}

@@ -345,8 +345,8 @@ class Move {
 	}
 
 	double smoothingDanger() {
-		if (normalizedSmoothing() > 65 || (oldDistance > 220 && newDistance < 250) && normalizedSmoothing() > 20) {
-			return (1 + smoothing) * 50;
+		if (normalizedSmoothing() > 60 || (oldDistance > 220 && newDistance < 250) && normalizedSmoothing() > 20) {
+			return normalizedSmoothing() / 20;
 		}
 		return 0;
 	}

@@ -17,8 +17,8 @@ public class MovementWave extends Wave {
 	static final double[] APPROACH_SLICES = { -3, 1, 3};
 	static final double[] DISTANCE_SLICES = { 300, 450, 550, 650 };
 	static final double[] VELOCITY_SLICES = { 1, 3, 5, 7 };
-	static final double[] WALL_SLICES = { 0.15, 0.35, 0.55, 0.75 };
-	static final double[] WALL_SLICES_REVERSE = { 0.15, 0.35, 0.8 };
+	static final double[] WALL_SLICES = { 0.15, 0.35, 0.65, 0.99 };
+	static final double[] WALL_SLICES_REVERSE = { 0.15, 0.35, 0.99 };
 	static final double[] TIMER_SLICES = { 0.15, 0.3, 0.7, 1.3 };
 	static final int APPROACH_INDEXES = APPROACH_SLICES.length + 1;
 	static final int DISTANCE_INDEXES = DISTANCE_SLICES.length + 1;
@@ -205,7 +205,7 @@ public class MovementWave extends Wave {
 
 	void registerHit(float[] buffer, int index, double weight, double depth) {
 		for (int i = 0; i < getFactors(); i++) {
-			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], weight / Math.pow(Math.abs(i - index) + 1, 2), depth);
+			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], weight / Math.pow(Math.abs(i - index) + 1, 2.2), depth);
 			//buffer[i] =  (float)PUtils.rollingAvg(buffer[i], Math.pow(Math.abs(i - index) + 1, 1.5), depth);
 		}
 	}
@@ -229,8 +229,8 @@ public class MovementWave extends Wave {
 		registerHit(hitsVelocityAccel, index, 10, 0.7);
 		registerHit(hitsVelocityApproach, index, 10, 0.7);
 		registerHit(hitsDistanceVelocity, index, 10, 0.7);
-		registerHit(hitsVelocity, index, 10, 0.7);
-		registerHit(fastHits, index, 10, 0.7);
+		registerHit(hitsVelocity, index, 8, 0.7);
+		registerHit(fastHits, index, 7, 0.7);
 	}
 
 	double danger(Point2D destination) {
@@ -265,7 +265,7 @@ public class MovementWave extends Wave {
 		float[] fastHits = fastHitCounts;
 		double danger = 0;
 		for (int i = 1; i < getFactors(); i++) {
-			danger += ((hitRate() > 1.8 ? visitsFast[i] + visits[i] + visitsTimerWalls[i] + visitsTimer[i] + visitsDistanceVelocityWalls[i] + visitsWalls[i] + visitsDistanceVelocity[i] + visitsVelocityAccel[i] + visitsVelocityApproach[i] + visitsDVA[i] + visitsVelocity[i] : 0) +
+			danger += ((isHighHitRate() ? visitsFast[i] + visits[i] + visitsTimerWalls[i] + visitsTimer[i] + visitsDistanceVelocityWalls[i] + visitsWalls[i] + visitsDistanceVelocity[i] + visitsVelocityAccel[i] + visitsVelocityApproach[i] + visitsDVA[i] + visitsVelocity[i] : 0) +
 					hitsTimerWalls[i] + hitsTimer[i] + hitsDistanceVelocityWalls[i] + hitsWalls[i] + hitsDistanceVelocity[i] + hitsVelocityAccel[i] + hitsVelocityApproach[i] + hitsDVA[i] + hitsVelocity[i] + fastHits[i]) / roots[Math.abs(index - i)];
 			//danger += ((isHighHitRate() ? visitsFast[i] + visits[i] + hitsTimerWalls[i] + hitsTimer[i] + hitsDistanceVelocityWalls[i] + hitsVelocityApproach[i] : 0) + hitsDVA[i] + hitsWalls[i] + hitsDistanceVelocity[i] + hitsVelocityAccel[i] + hitsVelocity[i] + fastHits[i]) / roots[Math.abs(index - i)];
 		}
@@ -278,7 +278,7 @@ public class MovementWave extends Wave {
 	}
 
 	static boolean isHighHitRate() {
-		return Butterfly.roundNum > 5 && hitRate() > 2.0;
+		return Butterfly.roundNum > 3 && hitRate() > 2.5;
 	}
 
 	static boolean isLowHitRate() {
