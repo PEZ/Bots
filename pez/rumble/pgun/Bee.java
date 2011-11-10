@@ -134,26 +134,24 @@ public class Bee extends Stinger {
 	}
 
 	void bulletHit(BulletHitEvent e) {
-		/*
 		Bullet b = e.getBullet();
 		BeeWave wave = (BeeWave)Wave.findClosest(BeeWave.bullets, new Point2D.Double(b.getX(), b.getY()), b.getVelocity());
 		if (wave != null) {
-			wave.currentGuessor().registerHit(b.getPower(), distance);
-			//BeeWave.BeeReplacor.registerHit(wave);
+			BeeWave.replacor.registerHit(wave.visitingIndex(), wave);
 		}
-		*/
 	}
 }
 
 class BeeWave extends GunWave {
-	static final int BINS = 65;
+	static final int BINS = 75;
 	static final int MIDDLE_BIN = (BINS - 1) / 2;
 
 	static List<BeeWave> waves;
 	static List<BeeWave> bullets;
 
-	static BeeAccumulator BeeAccumulator;
-	static BeeReplacor BeeReplacor;
+	static BeeAccumulator accumulator;
+	static BeeVirtualisor virtualisor;
+	static BeeReplacor replacor;
 	static List<Guessor> guessors;
 	static Guessor currentGuessor;
 	Map<Guessor, Integer> guesses = new HashMap<Guessor, Integer>();
@@ -259,8 +257,9 @@ class BeeWave extends GunWave {
 
 	static void initGuessors() {
 		guessors = new ArrayList<Guessor>();
-		guessors.add(BeeAccumulator = new BeeAccumulator());
-		guessors.add(BeeReplacor = new BeeReplacor());
+		guessors.add(accumulator = new BeeAccumulator());
+		guessors.add(replacor = new BeeReplacor());
+		guessors.add(virtualisor = new BeeVirtualisor());
 	}
 	
 	static Map<String, List<Guessor>> readEnemies(AdvancedRobot robot) {
@@ -292,8 +291,9 @@ class BeeWave extends GunWave {
 			guessors = (ArrayList<Guessor>)enemies.get(Bee.enemyName);
 		}
 		if (guessors != null) {
-			BeeAccumulator = (BeeAccumulator)guessors.get(0);
-			BeeReplacor = (BeeReplacor)guessors.get(1);
+			accumulator = (BeeAccumulator)guessors.get(0);
+			replacor = (BeeReplacor)guessors.get(1);
+			virtualisor = (BeeVirtualisor)guessors.get(2);
 			System.out.println("Fetched Guessor data for enemy: " + Bee.enemyName + "\n\t" + BeeWave.guessors.toString());
 		}
 		else {
@@ -305,8 +305,9 @@ class BeeWave extends GunWave {
 	static void saveStats(AdvancedRobot robot) {
 		Map<String, List<Guessor>> enemies = readEnemies(robot);
 		List<Guessor> orderedGuessors = new ArrayList<Guessor>();
-		orderedGuessors.add(BeeAccumulator);
-		orderedGuessors.add(BeeReplacor);
+		orderedGuessors.add(accumulator);
+		orderedGuessors.add(replacor);
+		orderedGuessors.add(virtualisor);
 		enemies.put(Bee.enemyName, orderedGuessors);
 		writeEnemies(robot, enemies, Bee.enemyName);
 		logVGStats(enemies.keySet().toArray(), enemies.values().toArray());
@@ -514,6 +515,52 @@ class BeeAccumulator extends Guessor {
 	}
 }
 
+class BeeVirtualisor extends Guessor {
+	static final long serialVersionUID = 7;
+	static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
+			[ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
+	static double[][][] distVel = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][BeeWave.BINS];
+	static double[][][][] distWall = new double[DISTANCE_SLICES.length + 1][WALL_SLICES.length + 1]
+			[WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
+	static double[][][][] accelWall = new double[ACCEL_INDEXES][WALL_SLICES.length + 1]
+			[WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
+	transient static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
+	transient static double[][][][][][][] distVelWallTimers = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+			[TIMER_SLICES.length + 1][WALL_SLICES.length + 1][TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
+	transient static double[][][][] velTimers = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
+			[TIMER_SLICES.length + 1][BeeWave.BINS];
+	transient static double[][][][] accelTimers = new double[ACCEL_INDEXES][TIMER_SLICES.length + 1]
+			[TIMER_SLICES.length + 1][BeeWave.BINS];
+	transient static double[][][][][][][][][] all = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1]
+			[TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
+
+	double[][] buffers(BeeWave w) {
+		return new double[][] {
+				faster[w.distanceSegmentFaster][w.velocitySegmentFaster][w.accelSegment][w.vChangeSegmentFaster][w.wallSegmentFaster],
+				distVel[w.distanceSegment][w.velocitySegment],
+				distWall[w.distanceSegment][w.wallSegment][w.reverseWallSegment],
+				accelWall[w.accelSegment][w.wallSegment][w.reverseWallSegment],
+				accelTimers[w.accelSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
+				velTimers[w.velocitySegmentFaster][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
+				slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment],
+				distVelWallTimers[w.distanceSegment][w.velocitySegment][w.vChangeSegment][w.wallSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
+				all[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
+		};
+	}
+
+	@Override
+	double getRollingDepth() {
+		return 2000;
+	}
+
+	@Override
+	double getWaveWeight(BeeWave wave) {
+		return 1.0;
+	}
+}
+
 class BeeReplacor extends Guessor {
 	static final long serialVersionUID = 7;
 	static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
@@ -548,10 +595,22 @@ class BeeReplacor extends Guessor {
 				all[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
 		};
 	}
+	
+	void registerHit(int index, BeeWave w) {
+		/*
+		double[][] buffers = buffers(w);
+		for (int b = 0; b < buffers.length; b++) {
+			buffers[b][0]++;
+			for (int i = 1; i < BeeWave.BINS; i++) {
+				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], -1.0 / Math.pow(Math.abs(i - index) + 1, 2), 0.8);
+			}
+		}
+		*/
+	}
 
 	@Override
 	double getRollingDepth() {
-		return 1.0;
+		return 0.8;
 	}
 
 	@Override

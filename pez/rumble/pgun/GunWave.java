@@ -4,7 +4,7 @@ import pez.rumble.utils.Wave;
 
 public class GunWave extends Wave {
 	boolean hit(double diff) {
-		return Math.abs(diff) < ((double)this.botWidth() / 2.0);
+		return Math.abs(diff) < ((double)this.botWidth() / 1.6);
 	}
 }
 
