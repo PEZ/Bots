@@ -286,7 +286,7 @@ class BeeWave extends GunWave {
 	}
 
 	static void readStats(AdvancedRobot robot) {
-		if (false && !Bee.isTC) {
+		if (false && !Bee.isTC) { //TODO: Enable data restore
 			Map<String, List<Guessor>> enemies = readEnemies(robot);
 			guessors = (ArrayList<Guessor>)enemies.get(Bee.enemyName);
 		}
@@ -391,7 +391,7 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 		for (int b = 0; b < buffers.length; b++) {
 			buffers[b][0]++;
 			for (int i = 1; i < BeeWave.BINS; i++) {
-				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], getWaveWeight(w) / Math.pow(Math.abs(i - index) + 1, 2), getRollingDepth());
+				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], index == i ? getWaveWeight(w) : 0, getRollingDepth());
 			}
 		}
 	}
@@ -597,15 +597,13 @@ class BeeReplacor extends Guessor {
 	}
 	
 	void registerHit(int index, BeeWave w) {
-		/*
 		double[][] buffers = buffers(w);
 		for (int b = 0; b < buffers.length; b++) {
 			buffers[b][0]++;
 			for (int i = 1; i < BeeWave.BINS; i++) {
-				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], -1.0 / Math.pow(Math.abs(i - index) + 1, 2), 0.8);
+				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], index == i ? -1.0 : 0, getRollingDepth() / 2);
 			}
 		}
-		*/
 	}
 
 	@Override

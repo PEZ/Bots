@@ -48,7 +48,7 @@ public class MovementWave extends Wave {
 	static float[][][] hitCountsDistanceVelocity;
 	static float[][] hitCountsVelocity;
 	static float[] fastHitCounts;
-	//static float[] randomCounts;
+	static float[] randomCounts;
 
 	static double rangeHits;
 	static double dangerForward;
@@ -98,7 +98,7 @@ public class MovementWave extends Wave {
 		hitCountsVelocity = new float[VELOCITY_INDEXES][getFactors()];
 		fastHitCounts = new float[getFactors()];
 		fastHitCounts[getMiddleFactor()] = 50;
-		//randomCounts = new float[getFactors()];
+		randomCounts = new float[getFactors()];
 	}
 
 	static void init() {
@@ -126,13 +126,13 @@ public class MovementWave extends Wave {
 		for (int i = 0, n = waves.size(); i < n; i++) {
 			MovementWave wave = (MovementWave)waves.get(i);
 			wave.setDistanceFromGun((robot.getTime() - wave.startTime) * wave.getBulletVelocity());
-			if (wave.passed(4)) {
+			if (wave.passed(10)) {
 				if (!wave.visitRegistered) {
 					if (wave.isSurfable) {
 						wave.registerVisit(2, 0.7);
 					}
 					else {
-						wave.registerVisit(0.4, 0.7);						
+						wave.registerVisit(0.4, 10);						
 					}
 					wave.visitRegistered = true;
 				}
@@ -184,7 +184,7 @@ public class MovementWave extends Wave {
 		registerHit(visitsVelocityApproach, index, weight, depth);
 		registerHit(visitsDistanceVelocity, index, weight, depth);
 		registerHit(visitsVelocity, index, weight, depth);
-		//registerHit(randomCounts, (int)(Math.random() * (getFactors() - 1) + 1), PUtils.minMax(Math.pow(hitRate() * 2.1, 2), 0, 60), 10.0);
+		registerHit(randomCounts, (int)(Math.random() * (getFactors() - 1) + 1), 0.05, 2);
 	}
 
 	static void registerHit(Bullet bullet) {
@@ -205,8 +205,7 @@ public class MovementWave extends Wave {
 
 	void registerHit(float[] buffer, int index, double weight, double depth) {
 		for (int i = 0; i < getFactors(); i++) {
-			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], weight / Math.pow(Math.abs(i - index) + 1, 2.2), depth);
-			//buffer[i] =  (float)PUtils.rollingAvg(buffer[i], Math.pow(Math.abs(i - index) + 1, 1.5), depth);
+			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], index == i ? weight : 0.0, depth);
 		}
 	}
 
@@ -263,6 +262,7 @@ public class MovementWave extends Wave {
 		float[] hitsDistanceVelocity = hitCountsDistanceVelocity[distanceIndex][velocityIndex];
 		float[] hitsVelocity = hitCountsVelocity[velocityIndex];
 		float[] fastHits = fastHitCounts;
+		//TODO: Consider randomCounts
 		double danger = 0;
 		for (int i = 1; i < getFactors(); i++) {
 			danger += ((isHighHitRate() ? visitsFast[i] + visits[i] + visitsTimerWalls[i] + visitsTimer[i] + visitsDistanceVelocityWalls[i] + visitsWalls[i] + visitsDistanceVelocity[i] + visitsVelocityAccel[i] + visitsVelocityApproach[i] + visitsDVA[i] + visitsVelocity[i] : 0) +
