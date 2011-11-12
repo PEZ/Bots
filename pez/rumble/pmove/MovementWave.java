@@ -126,13 +126,13 @@ public class MovementWave extends Wave {
 		for (int i = 0, n = waves.size(); i < n; i++) {
 			MovementWave wave = (MovementWave)waves.get(i);
 			wave.setDistanceFromGun((robot.getTime() - wave.startTime) * wave.getBulletVelocity());
-			if (wave.passed(10)) {
+			if (wave.passed(2)) {
 				if (!wave.visitRegistered) {
 					if (wave.isSurfable) {
 						wave.registerVisit(2, 0.7);
 					}
 					else {
-						wave.registerVisit(0.4, 10);						
+						wave.registerVisit(0.4, 3);						
 					}
 					wave.visitRegistered = true;
 				}
@@ -184,7 +184,7 @@ public class MovementWave extends Wave {
 		registerHit(visitsVelocityApproach, index, weight, depth);
 		registerHit(visitsDistanceVelocity, index, weight, depth);
 		registerHit(visitsVelocity, index, weight, depth);
-		registerHit(randomCounts, (int)(Math.random() * (getFactors() - 1) + 1), 0.05, 2);
+		registerHit(randomCounts, (int)(Math.random() * (getFactors() - 1) + 1), PUtils.minMax(Math.pow(hitRate() * 2.1, 2), 0, 60), 10.0);
 	}
 
 	static void registerHit(Bullet bullet) {
@@ -205,7 +205,8 @@ public class MovementWave extends Wave {
 
 	void registerHit(float[] buffer, int index, double weight, double depth) {
 		for (int i = 0; i < getFactors(); i++) {
-			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], index == i ? weight : 0.0, depth);
+			buffer[i] =  (float)PUtils.rollingAvg(buffer[i], weight / Math.pow(Math.abs(i - index) + 1, 2.2), depth);
+			//buffer[i] =  (float)PUtils.rollingAvg(buffer[i], Math.pow(Math.abs(i - index) + 1, 1.5), depth);
 		}
 	}
 

@@ -17,6 +17,7 @@
 *.orig
 
 #eclipse stuff
+.settings
 .metadata
 /.classpath
 
