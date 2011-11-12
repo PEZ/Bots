@@ -126,13 +126,13 @@ public class MovementWave extends Wave {
 		for (int i = 0, n = waves.size(); i < n; i++) {
 			MovementWave wave = (MovementWave)waves.get(i);
 			wave.setDistanceFromGun((robot.getTime() - wave.startTime) * wave.getBulletVelocity());
-			if (wave.passed(2)) {
+			if (wave.passed(4)) {
 				if (!wave.visitRegistered) {
 					if (wave.isSurfable) {
 						wave.registerVisit(2, 0.7);
 					}
 					else {
-						wave.registerVisit(0.4, 3);						
+						wave.registerVisit(0.4, 0.7);						
 					}
 					wave.visitRegistered = true;
 				}

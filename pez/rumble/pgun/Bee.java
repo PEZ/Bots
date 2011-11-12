@@ -528,8 +528,8 @@ class BeeVirtualisor extends Guessor {
 			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
 	transient static double[][][][][][][] distVelWallTimers = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][WALL_SLICES.length + 1][TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
-	transient static double[][][][][][] velTimersWall = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
-			[TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
+	transient static double[][][][] velTimers = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
+			[TIMER_SLICES.length + 1][BeeWave.BINS];
 	transient static double[][][][] accelTimers = new double[ACCEL_INDEXES][TIMER_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][BeeWave.BINS];
 //	transient static double[][][][][][][][][] all = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
@@ -543,7 +543,7 @@ class BeeVirtualisor extends Guessor {
 				distWall[w.distanceSegment][w.wallSegment][w.reverseWallSegment],
 				accelWall[w.accelSegment][w.wallSegment][w.reverseWallSegment],
 				accelTimers[w.accelSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
-				velTimersWall[w.velocitySegmentFaster][w.sinceStationarySegment][w.sinceMaxSpeedSegment][w.wallSegment][w.reverseWallSegment],
+				velTimers[w.velocitySegmentFaster][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
 				slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment],
 				distVelWallTimers[w.distanceSegment][w.velocitySegment][w.vChangeSegment][w.wallSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
 //				all[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
@@ -552,7 +552,7 @@ class BeeVirtualisor extends Guessor {
 
 	@Override
 	double getRollingDepth() {
-		return 1000;
+		return 2000;
 	}
 
 	@Override
@@ -574,8 +574,8 @@ class BeeForgettor extends Guessor {
 			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
 	transient static double[][][][][][][] distVelWallTimers = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][WALL_SLICES.length + 1][TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
-	transient static double[][][][][][] velTimersWall = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
-			[TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
+	transient static double[][][][] velTimers = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
+			[TIMER_SLICES.length + 1][BeeWave.BINS];
 	transient static double[][][][] accelTimers = new double[ACCEL_INDEXES][TIMER_SLICES.length + 1]
 			[TIMER_SLICES.length + 1][BeeWave.BINS];
 //	transient static double[][][][][][][][][] all = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
@@ -589,7 +589,7 @@ class BeeForgettor extends Guessor {
 				distWall[w.distanceSegment][w.wallSegment][w.reverseWallSegment],
 				accelWall[w.accelSegment][w.wallSegment][w.reverseWallSegment],
 				accelTimers[w.accelSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
-				velTimersWall[w.velocitySegmentFaster][w.sinceStationarySegment][w.sinceMaxSpeedSegment][w.wallSegment][w.reverseWallSegment],
+				velTimers[w.velocitySegmentFaster][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
 				slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment],
 				distVelWallTimers[w.distanceSegment][w.velocitySegment][w.vChangeSegment][w.wallSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
 //				all[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
@@ -597,6 +597,7 @@ class BeeForgettor extends Guessor {
 	}
 	
 	void registerHit(int index, BeeWave w) {
+		/*
 		double[][] buffers = buffers(w);
 		for (int b = 0; b < buffers.length; b++) {
 			buffers[b][0]++;
@@ -605,11 +606,12 @@ class BeeForgettor extends Guessor {
 				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], -getWaveWeight(w) / Math.pow(Math.abs(i - index) + 1, 2), getRollingDepth());
 			}
 		}
+		*/
 	}
 
 	@Override
 	double getRollingDepth() {
-		return 10;
+		return 0.8;
 	}
 
 	@Override
