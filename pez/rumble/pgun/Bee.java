@@ -137,7 +137,7 @@ public class Bee extends Stinger {
 		Bullet b = e.getBullet();
 		BeeWave wave = (BeeWave)Wave.findClosest(BeeWave.bullets, new Point2D.Double(b.getX(), b.getY()), b.getVelocity());
 		if (wave != null) {
-//			BeeWave.replacor.registerHit(wave.visitingIndex(), wave);
+			BeeWave.replacor.registerHit(wave.visitingIndex(), wave);
 		}
 	}
 }
@@ -259,7 +259,7 @@ class BeeWave extends GunWave {
 		guessors = new ArrayList<Guessor>();
 		guessors.add(accumulator = new BeeRealisor());
 		guessors.add(virtualisor = new BeeVirtualisor());
-//		guessors.add(replacor = new BeeForgettor());
+		guessors.add(replacor = new BeeForgettor());
 	}
 	
 	static Map<String, List<Guessor>> readEnemies(AdvancedRobot robot) {
@@ -293,7 +293,7 @@ class BeeWave extends GunWave {
 		if (guessors != null) {
 			accumulator = (BeeRealisor)guessors.get(0);
 			virtualisor = (BeeVirtualisor)guessors.get(1);
-//			replacor = (BeeForgettor)guessors.get(2);
+			replacor = (BeeForgettor)guessors.get(2);
 			System.out.println("Fetched Guessor data for enemy: " + Bee.enemyName + "\n\t" + BeeWave.guessors.toString());
 		}
 		else {
@@ -307,7 +307,7 @@ class BeeWave extends GunWave {
 		List<Guessor> orderedGuessors = new ArrayList<Guessor>();
 		orderedGuessors.add(accumulator);
 		orderedGuessors.add(virtualisor);
-//		orderedGuessors.add(replacor);
+		orderedGuessors.add(replacor);
 		enemies.put(Bee.enemyName, orderedGuessors);
 		writeEnemies(robot, enemies, Bee.enemyName);
 		logVGStats(enemies.keySet().toArray(), enemies.values().toArray());
@@ -616,6 +616,9 @@ class BeeForgettor extends Guessor {
 
 	@Override
 	double getWaveWeight(BeeWave wave) {
+		if (wave.weight < 2.0) {
+			return 0.15;
+		}
 		return 1.0;
 	}
 }
