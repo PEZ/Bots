@@ -254,7 +254,7 @@ public class Butterfly {
 				evasion = PUtils.minMax(410.0 / distance, 0.95, 1.25);
 			}
 			else {
-				evasion = PUtils.minMax((300 * Math.pow(MovementWave.hitRate(), 1.2)) / distance, 1.03, 1.3);
+				evasion = PUtils.minMax((300 * Math.pow(MovementWave.hitRate(), 1.2)) / distance, 0.95, 1.05);
 			}
 		}
 		return evasion;

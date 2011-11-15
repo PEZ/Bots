@@ -254,7 +254,7 @@ class BeeWave extends GunWave {
 	}
 
 	public double maxEscapeAngle() {
-		return PUtils.maxEscapeAngle(bulletVelocity) * 1.4;
+		return PUtils.maxEscapeAngle(bulletVelocity) * 1.2;
 	}
 
 	static void initGuessors() {
@@ -453,7 +453,7 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	}
 	
 	double rating() {
-		return 0.5 * totalRating() + 0.5 * rollingRating();
+		return 0.6 * totalRating() + 0.4 * rollingRating();
 	}
 	
 	public int compareTo(Object o) {
@@ -554,13 +554,16 @@ class BeeRealisor extends Guessor {
 
 	@Override
 	double getWaveWeight(BeeWave wave) {
+		if (wave.weight < 2.0) {
+			return 0.25;
+		}
 		return 1.0;
 	}
 	
 	@Override
 	boolean shouldConsiderWave(BeeWave wave) {
 		if (wave.weight < 2.0) {
-			return false;
+			return true;
 		}
 		return true;
 	}
@@ -667,13 +670,16 @@ class BeeRealForgettor extends Guessor {
 
 	@Override
 	double getWaveWeight(BeeWave wave) {
+		if (wave.weight < 2.0) {
+			return 0.25;
+		}
 		return 1.0;
 	}
 	
 	@Override
 	boolean shouldConsiderWave(BeeWave wave) {
 		if (wave.weight < 2.0) {
-			return false;
+			return true;
 		}
 		return true;
 	}
