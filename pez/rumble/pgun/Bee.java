@@ -96,6 +96,7 @@ public class Bee extends Stinger {
 		wave.reverseWallDistance = wave.wallDistance(-1, fieldRectangle);
 
 		wave.setSegmentation();
+		Guessor.registerVirtualFire();
 
 		if (robot.getOthers() > 0 && lastBearingDirection != 0) {
 			BeeWave.waves.add(wave);
@@ -111,7 +112,7 @@ public class Bee extends Stinger {
 				lastWave != null) {
 					lastWave.weight = 5;
 					BeeWave.bullets.add(lastWave);
-					lastWave.currentGuessor().registerFire();
+					Guessor.registerFire();
 			}
 		}
 		lastVelocity = e.getVelocity();
@@ -137,7 +138,8 @@ public class Bee extends Stinger {
 		Bullet b = e.getBullet();
 		BeeWave wave = (BeeWave)Wave.findClosest(BeeWave.bullets, new Point2D.Double(b.getX(), b.getY()), b.getVelocity());
 		if (wave != null) {
-			BeeWave.replacor.registerHit(wave.visitingIndex(), wave);
+			BeeWave.realForgettor.registerHit(wave.visitingIndex(), wave);
+			BeeWave.virtualForgettor.registerHit(wave.visitingIndex(), wave);
 		}
 	}
 }
@@ -149,9 +151,10 @@ class BeeWave extends GunWave {
 	static List<BeeWave> waves;
 	static List<BeeWave> bullets;
 
-	static BeeRealisor accumulator;
+	static BeeRealisor realisor;
 	static BeeVirtualisor virtualisor;
-	static BeeForgettor replacor;
+	static BeeRealForgettor realForgettor;
+	static BeeVirtualForgettor virtualForgettor;
 	static List<Guessor> guessors;
 	static Guessor currentGuessor;
 	Map<Guessor, Integer> guesses = new HashMap<Guessor, Integer>();
@@ -232,9 +235,8 @@ class BeeWave extends GunWave {
 	}
 
 	void registerVisit() {
-		for (int i = 0, n = guessors.size(); i < n; i++) {
-			Guessor gun = (Guessor)guessors.get(i);
-			gun.registerVisit(this, guesses);
+		for (Guessor guessor : guessors) {
+			guessor.registerVisit(this, guesses);
 		}
 	}
 
@@ -257,9 +259,10 @@ class BeeWave extends GunWave {
 
 	static void initGuessors() {
 		guessors = new ArrayList<Guessor>();
-		guessors.add(accumulator = new BeeRealisor());
+		guessors.add(realisor = new BeeRealisor());
 		guessors.add(virtualisor = new BeeVirtualisor());
-		guessors.add(replacor = new BeeForgettor());
+		guessors.add(realForgettor = new BeeRealForgettor());
+		guessors.add(virtualForgettor = new BeeVirtualForgettor());
 	}
 	
 	static Map<String, List<Guessor>> readEnemies(AdvancedRobot robot) {
@@ -291,9 +294,10 @@ class BeeWave extends GunWave {
 			guessors = (ArrayList<Guessor>)enemies.get(Bee.enemyName);
 		}
 		if (guessors != null) {
-			accumulator = (BeeRealisor)guessors.get(0);
+			realisor = (BeeRealisor)guessors.get(0);
 			virtualisor = (BeeVirtualisor)guessors.get(1);
-			replacor = (BeeForgettor)guessors.get(2);
+			realForgettor = (BeeRealForgettor)guessors.get(2);
+			virtualForgettor = (BeeVirtualForgettor)guessors.get(3);
 			System.out.println("Fetched Guessor data for enemy: " + Bee.enemyName + "\n\t" + BeeWave.guessors.toString());
 		}
 		else {
@@ -305,9 +309,10 @@ class BeeWave extends GunWave {
 	static void saveStats(AdvancedRobot robot) {
 		Map<String, List<Guessor>> enemies = readEnemies(robot);
 		List<Guessor> orderedGuessors = new ArrayList<Guessor>();
-		orderedGuessors.add(accumulator);
+		orderedGuessors.add(realisor);
 		orderedGuessors.add(virtualisor);
-		orderedGuessors.add(replacor);
+		orderedGuessors.add(realForgettor);
+		orderedGuessors.add(virtualForgettor);
 		enemies.put(Bee.enemyName, orderedGuessors);
 		writeEnemies(robot, enemies, Bee.enemyName);
 		logVGStats(enemies.keySet().toArray(), enemies.values().toArray());
@@ -341,8 +346,12 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	transient static final double[] TIMER_SLICES = {.05, .15, .35, .45}; //{ 0.1, 0.3, 0.7, 1.2 };
 	transient static final double[] TIMER_SLICES_FASTER = {.05, .15, .45}; //{ 0.1, 0.3, 0.7 };
 
-	private long rBulletsFired;
-	private double rRating;
+	static private long realBulletsFired;
+	static private long virtualBulletsFired;
+	private long realHits;
+	private long virtualHits;
+	private double rollingRealRating;
+	private double rollingVirtualRating;
 	int rounds;
 	transient private int guess;
 
@@ -352,15 +361,24 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 
 	void registerVisit(BeeWave w, Map<Guessor, Integer> guesses) {
 		int index = Math.max(1, w.visitingIndex());
-		if (w.weight > 2.0) {
-			updateRating(index, ((Integer)guesses.get(this)).intValue(), w);
-		}
+		updateRating(index, ((Integer)guesses.get(this)).intValue(), w);
 		registerVisit(index, w);
 	}
 
 	void updateRating(int index, int guess, BeeWave w) {
 		if (w.hit(guess - index)) {
-			rRating++;
+			if (w.weight > 2) {
+				realHits++;
+				rollingRealRating = PUtils.rollingAvg(rollingRealRating, 1, 100);
+			}
+			virtualHits++;
+			rollingVirtualRating = PUtils.rollingAvg(rollingVirtualRating, 1, 1500);
+		}
+		else {
+			if (w.weight > 2) {
+				rollingRealRating = PUtils.rollingAvg(rollingRealRating, 0, 100);
+			}
+			rollingVirtualRating = PUtils.rollingAvg(rollingVirtualRating, 0, 1500);
 		}
 	}
 
@@ -386,12 +404,18 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 		return ((VisitsIndex)visitRanks.get(0)).index;
 	}
 
+	boolean shouldConsiderWave(BeeWave w) {
+		return true;
+	}
+
 	void registerVisit(int index, BeeWave w) {
-		double[][] buffers = buffers(w);
-		for (int b = 0; b < buffers.length; b++) {
-			buffers[b][0]++;
-			for (int i = 1; i < BeeWave.BINS; i++) {
-				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], getWaveWeight(w) / Math.pow(Math.abs(i - index) + 1, 2), getRollingDepth());
+		if (shouldConsiderWave(w)) {
+			double[][] buffers = buffers(w);
+			for (int b = 0; b < buffers.length; b++) {
+				buffers[b][0]++;
+				for (int i = 1; i < BeeWave.BINS; i++) {
+					buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], getWaveWeight(w) / Math.pow(Math.abs(i - index) + 1, 2), getRollingDepth());
+				}
 			}
 		}
 	}
@@ -404,21 +428,37 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 		return guess;
 	}
 
-	void registerFire() {
-		rBulletsFired++;
+	static void registerFire() {
+		realBulletsFired++;
 	}
 
-	void registerHit(double power, double distance) {
-		rRating++;
+	static void registerVirtualFire() {
+		virtualBulletsFired++;
 	}
 
-	double rRating() {
-		return rRating / rBulletsFired;
+	double realRating() {
+		return (double)realHits / (double)Math.max(1, realBulletsFired);
 	}
 
+	double virtualRating() {
+		return (double)virtualHits / (double)Math.max(1, virtualBulletsFired);
+	}
+
+	double totalRating() {
+		return 0.25 * virtualRating() + 0.75 * realRating();
+	}
+
+	private double rollingRating() {
+		return 0.25 * rollingVirtualRating + 0.75 * rollingRealRating;
+	}
+	
+	double rating() {
+		return 0.5 * totalRating() + 0.5 * rollingRating();
+	}
+	
 	public int compareTo(Object o) {
-		double ratingA = this.rRating;
-		double ratingB = ((Guessor)o).rRating;
+		double ratingA = this.rating();
+		double ratingB = ((Guessor)o).rating();
 		if (ratingA > ratingB) {
 			return -1;
 		}
@@ -444,7 +484,13 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 	}
 
 	String echoStats() {
-		return name() + " rr" + logNum(rRating);
+		return name() + " r:"+ logNum(rating()) +
+				" tr:" + logNum(totalRating()) +
+				" vr:" + logNum(virtualRating()) +
+				" rr:" + logNum(realRating()) +
+				" roll_r:" + logNum(rollingRating()) +
+				" roll_vr:" + logNum(rollingVirtualRating) +
+				" roll_rr:" + logNum(rollingRealRating) + "\n";
 	}
 
 	static String logHeader(String tag) {
@@ -458,7 +504,7 @@ abstract class Guessor implements Comparable<Object>, Serializable {
 
 	String logRow() {
 		return rounds + "\t" +
-		logNum(rRating);
+		logNum(realHits);
 	}
 
 	public String toString() {
@@ -508,10 +554,15 @@ class BeeRealisor extends Guessor {
 
 	@Override
 	double getWaveWeight(BeeWave wave) {
-		if (wave.weight < 2.0) {
-			return 0.25;
-		}
 		return 1.0;
+	}
+	
+	@Override
+	boolean shouldConsiderWave(BeeWave wave) {
+		if (wave.weight < 2.0) {
+			return false;
+		}
+		return true;
 	}
 }
 
@@ -561,7 +612,7 @@ class BeeVirtualisor extends Guessor {
 	}
 }
 
-class BeeForgettor extends Guessor {
+class BeeRealForgettor extends Guessor {
 	static final long serialVersionUID = 7;
 	static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
 			[ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
@@ -616,9 +667,73 @@ class BeeForgettor extends Guessor {
 
 	@Override
 	double getWaveWeight(BeeWave wave) {
+		return 1.0;
+	}
+	
+	@Override
+	boolean shouldConsiderWave(BeeWave wave) {
 		if (wave.weight < 2.0) {
-			return 0.15;
+			return false;
 		}
+		return true;
+	}
+}
+
+class BeeVirtualForgettor extends Guessor {
+	static final long serialVersionUID = 7;
+	static double[][][][][][] faster = new double[DISTANCE_SLICES_FASTER.length + 1][VELOCITY_SLICES_FASTER.length + 1]
+			[ACCEL_INDEXES][TIMER_SLICES_FASTER.length + 1][WALL_SLICES_FASTER.length + 1][BeeWave.BINS];
+	static double[][][] distVel = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1][BeeWave.BINS];
+	transient static double[][][][] distWall = new double[DISTANCE_SLICES.length + 1]
+			[WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
+	transient static double[][][][] accelWall = new double[ACCEL_INDEXES][WALL_SLICES.length + 1]
+			[WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
+	transient static double[][][][][][][] slower = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1][BeeWave.BINS];
+	transient static double[][][][][][][] distVelWallTimers = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+			[TIMER_SLICES.length + 1][WALL_SLICES.length + 1][TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
+	transient static double[][][][] velTimers = new double[VELOCITY_SLICES_FASTER.length + 1][TIMER_SLICES.length + 1]
+			[TIMER_SLICES.length + 1][BeeWave.BINS];
+	transient static double[][][][] accelTimers = new double[ACCEL_INDEXES][TIMER_SLICES.length + 1]
+			[TIMER_SLICES.length + 1][BeeWave.BINS];
+//	transient static double[][][][][][][][][] all = new double[DISTANCE_SLICES.length + 1][VELOCITY_SLICES.length + 1]
+//			[ACCEL_INDEXES][TIMER_SLICES.length + 1][WALL_SLICES.length + 1][WALL_SLICES_REVERSE.length + 1]
+//			[TIMER_SLICES.length + 1][TIMER_SLICES.length + 1][BeeWave.BINS];
+
+	double[][] buffers(BeeWave w) {
+		return new double[][] {
+				faster[w.distanceSegmentFaster][w.velocitySegmentFaster][w.accelSegment][w.vChangeSegmentFaster][w.wallSegmentFaster],
+				distVel[w.distanceSegment][w.velocitySegment],
+				distWall[w.distanceSegment][w.wallSegment][w.reverseWallSegment],
+				accelWall[w.accelSegment][w.wallSegment][w.reverseWallSegment],
+				accelTimers[w.accelSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
+				velTimers[w.velocitySegmentFaster][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
+				slower[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment],
+				distVelWallTimers[w.distanceSegment][w.velocitySegment][w.vChangeSegment][w.wallSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
+//				all[w.distanceSegment][w.velocitySegment][w.accelSegment][w.vChangeSegment][w.wallSegment][w.reverseWallSegment][w.sinceStationarySegment][w.sinceMaxSpeedSegment],
+		};
+	}
+	
+	void registerHit(int index, BeeWave w) {
+		/*
+		double[][] buffers = buffers(w);
+		for (int b = 0; b < buffers.length; b++) {
+			buffers[b][0]++;
+			for (int i = 1; i < BeeWave.BINS; i++) {
+				//buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], index == i ? -1.0 : 0, getRollingDepth() / 2);
+				buffers[b][i] =  (float)PUtils.rollingAvg(buffers[b][i], -getWaveWeight(w) / Math.pow(Math.abs(i - index) + 1, 2), getRollingDepth());
+			}
+		}
+		*/
+	}
+
+	@Override
+	double getRollingDepth() {
+		return 0.8;
+	}
+
+	@Override
+	double getWaveWeight(BeeWave wave) {
 		return 1.0;
 	}
 }

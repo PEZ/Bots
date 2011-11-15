@@ -74,6 +74,7 @@ public class MovementWave extends Wave {
 	boolean visitRegistered;
 
 	WaveGrapher grapher; // GL
+	private boolean isHitByBullet;
 
 	static void initStatBuffers() {
 		visitCounts = new float[DISTANCE_INDEXES][VELOCITY_INDEXES][ACCEL_INDEXES][TIMER_INDEXES][WALL_INDEXES][getFactors()];
@@ -125,31 +126,38 @@ public class MovementWave extends Wave {
 		List<MovementWave> reap = new ArrayList<MovementWave>();
 		for (int i = 0, n = waves.size(); i < n; i++) {
 			MovementWave wave = (MovementWave)waves.get(i);
-			wave.setDistanceFromGun((robot.getTime() - wave.startTime) * wave.getBulletVelocity());
-			if (wave.passed(4)) {
-				if (!wave.visitRegistered) {
-					if (wave.isSurfable) {
-						wave.registerVisit(2, 0.7);
-					}
-					else {
-						wave.registerVisit(0.4, 0.7);						
-					}
-					wave.visitRegistered = true;
-				}
-			}
-			if (wave.passed(wave.getBulletVelocity() * 2)) {
-				surfables.remove(wave);
-				if (wave.grapher != null) { // GL
-					wave.grapher.remove(); // GL
-				} // GL
-			}
-			if (wave.passed(-15)) {
+			if (wave.isHitByBullet) {
 				reap.add(wave);
+				surfables.remove(wave);
 				bullets.remove(wave);
 			}
-			if (wave.grapher != null) { // GL
-				wave.grapher.drawWave(); // GL
-			} // GL
+			else {
+				wave.setDistanceFromGun((robot.getTime() - wave.startTime) * wave.getBulletVelocity());
+				if (wave.passed(4)) {
+					if (!wave.visitRegistered) {
+						if (wave.isSurfable) {
+							wave.registerVisit(2, 0.7);
+						}
+						else {
+							wave.registerVisit(0.4, 0.7);						
+						}
+						wave.visitRegistered = true;
+					}
+				}
+				if (wave.passed(wave.getBulletVelocity() * 2)) {
+					surfables.remove(wave);
+					if (wave.grapher != null) { // GL
+						wave.grapher.remove(); // GL
+					} // GL
+				}
+				if (wave.passed(-15)) {
+					reap.add(wave);
+					bullets.remove(wave);
+				}
+				if (wave.grapher != null) { // GL
+					wave.grapher.drawWave(); // GL
+				} // GL
+			}
 		}
 		for (int i = 0, n = reap.size(); i < n; i++) {
 			waves.remove(reap.get(i));
@@ -192,6 +200,7 @@ public class MovementWave extends Wave {
 		MovementWave wave = (MovementWave)Wave.findClosest(bullets, bulletLocation, bullet.getVelocity());
 		if (wave != null) {
 			wave.registerHit(bullet.getHeadingRadians());
+			wave.isHitByBullet = true;
 		}
 	}
 
