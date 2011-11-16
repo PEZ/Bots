@@ -22,6 +22,8 @@ public class CassiusClay extends RumbleBot {
 		floater = new Butterfly(this);
 		stinger = new Bee(this, robotPredictor);
 		setColors(new Color(60, 30, 10), Color.green, Color.black);
+		setBulletColor(Color.gray);
+		setScanColor(Color.gray);
 		super.run();
 	}
 }

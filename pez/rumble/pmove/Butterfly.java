@@ -241,20 +241,20 @@ public class Butterfly {
 	static double evasion(double distance) {
 		double evasion;
 		if (time < 16) {
-			evasion = PUtils.minMax(distance / 700, 1.3, 5.0);
+			evasion = PUtils.minMax(600 / distance, 1.3, 1.6);
 		}
 		else {
 			if (RumbleBot.enemyIsRammer()) {
-				evasion = PUtils.minMax(150.0 / distance, 1.45, 1.65);
+				evasion = PUtils.minMax(600.0 / distance, 1.25, 1.45);
 			}
 			else if (time > 30 && bulletsThisRound == 0) {
 				evasion = PUtils.minMax(300.0 / distance, 0.75, 1.5);
 			}
 			else if (MovementWave.isLowHitRate()) {
-				evasion = PUtils.minMax(410.0 / distance, 0.95, 1.25);
+				evasion = PUtils.minMax(410.0 / distance, 0.95, 1.05);
 			}
 			else {
-				evasion = PUtils.minMax((300 * Math.pow(MovementWave.hitRate(), 1.2)) / distance, 0.95, 1.05);
+				evasion = PUtils.minMax(440 / distance, 1.01, 1.15);
 			}
 		}
 		return evasion;

@@ -80,7 +80,7 @@ public abstract class Stinger {
 			bulletPower = 1.6;
 		}
 		if (robot.enemyHasFired) {
-			if (robot.lastEnemyBulletPower < bulletPower) {
+			if (robot.lastEnemyBulletPower < 0.4) {
 				bulletPower = robot.lastEnemyBulletPower;
 			}
 		}

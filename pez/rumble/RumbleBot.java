@@ -1,5 +1,7 @@
 package pez.rumble;
 import java.awt.Graphics2D;
+import java.util.Iterator;
+import java.util.Vector;
 
 import pez.rumble.pgun.*;
 import pez.rumble.pmove.*;
@@ -94,6 +96,13 @@ public abstract class RumbleBot extends AdvancedRobot {
 	}
 
 	public void onDeath(DeathEvent e) {
+		Iterator<Event> i = getAllEvents().iterator();
+		while(i.hasNext()){
+			Object obj = i.next();
+			if(obj instanceof HitByBulletEvent) {
+				onHitByBullet((HitByBulletEvent) obj);
+			}
+		}
 		stinger.roundOver();
 		floater.roundOver();
 	}
