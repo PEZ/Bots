@@ -74,7 +74,7 @@ public class Pugilist extends AdvancedRobot {
 		double enemyDeltaEnergy = enemyEnergy - e.getEnergy();
 		if (enemyDeltaEnergy > 0 && enemyDeltaEnergy <= 3.0) {
 			enemyFirePower = enemyDeltaEnergy;
-			ew.surfable = true;
+			addCustomEvent(ew);
 		}
 		enemyEnergy = e.getEnergy();
 		ew.bulletVelocity = 20 - 3 * enemyFirePower;
@@ -100,7 +100,6 @@ public class Pugilist extends AdvancedRobot {
 		enemyDistance = e.getDistance();
 
 		ew.advance(2);
-		addCustomEvent(ew);
 
 		// <gun>
 		if (enemyVelocity != (enemyVelocity = e.getVelocity())) {
@@ -123,7 +122,7 @@ public class Pugilist extends AdvancedRobot {
 
 		wave.visits = Wave.factors[distanceIndex][velocityIndex]
 				[velocityIndex = (int) Math.abs(enemyVelocity / 2)]
-				[(int) minMax(Math.pow(enemyTimeSinceVChange++, 0.45) - 1, 0,Wave.VCHANGE_TIME_INDEXES - 1)]
+				[(int) minMax(Math.pow(enemyTimeSinceVChange++, 0.4) - 1, 0,Wave.VCHANGE_TIME_INDEXES - 1)]
 				[wallIndex(wave)];
 
 		setTurnGunRightRadians(Utils.normalRelativeAngle(enemyAbsoluteBearing
@@ -138,6 +137,7 @@ public class Pugilist extends AdvancedRobot {
 		}
 		// </gun>
 
+		setMaxVelocity((EnemyWave.dangerStop < Math.min(EnemyWave.dangerReverse, EnemyWave.dangerForward)) ? 0 : MAX_VELOCITY);
 		if (EnemyWave.dangerReverse < EnemyWave.dangerForward) {
 			direction = -direction;
 		}
@@ -148,14 +148,11 @@ public class Pugilist extends AdvancedRobot {
 
 		setTurnRadarRightRadians(Utils.normalRelativeAngle(enemyAbsoluteBearing
 				- getRadarHeadingRadians()) * 2);
-		EnemyWave.dangerForward = EnemyWave.dangerReverse = 0;
+		EnemyWave.dangerForward = EnemyWave.dangerReverse = EnemyWave.dangerStop = 0;
 	}
 
 	public void onHitByBullet(HitByBulletEvent e) {
-		try {
-			EnemyWave.passingWave.registerVisits(50);
-		} catch (Exception exp) {
-		}
+		EnemyWave.passingWave.registerVisits();
 	}
 
 	static int wallIndex(Wave wave) {
@@ -170,14 +167,17 @@ public class Pugilist extends AdvancedRobot {
 	}
 
 	static Point2D wallSmoothedDestination(Point2D location, double direction) {
-		Point2D destination;
-		double smoothing = 0;
-		while (!fieldRectangle.contains(destination = project(location,
-				absoluteBearing(location, enemyLocation) - direction
-						* ((1.25 - smoothing / 100) * Math.PI / 2),
-				Math.min(120, enemyDistance / 3)))
-				&& smoothing < MAX_WALL_SMOOTH_TRIES) {
-			smoothing++;
+		Point2D destination = new Point2D.Double();
+		int tries = 0;
+		while (tries < 2) {
+			double currentSmoothing = 0;
+	        while (currentSmoothing < 100 && !fieldRectangle.contains(destination = project(location, absoluteBearing(location, enemyLocation) -
+        		direction*(Math.PI / 2 + 0.2 - (currentSmoothing++ / 100.0)), enemyDistance / 5.0)));
+	        direction -= direction;
+	        tries++;
+	        if (currentSmoothing < 45) {
+	        	break;
+	        }
 		}
 		return destination;
 	}
@@ -185,6 +185,8 @@ public class Pugilist extends AdvancedRobot {
 	void updateDirectionStats(EnemyWave wave) {
 		EnemyWave.dangerReverse += wave
 				.danger(waveImpactLocation(wave, -1.0, 5));
+		EnemyWave.dangerStop += wave
+				.danger(waveImpactLocation(wave, 0.0, 3));
 		EnemyWave.dangerForward += wave
 				.danger(waveImpactLocation(wave, 1.0, 0));
 	}
@@ -241,7 +243,7 @@ class Wave extends Condition {
 
 	static int[][][][][][] factors = new int[DISTANCE_INDEXES][VELOCITY_INDEXES][VELOCITY_INDEXES][VCHANGE_TIME_INDEXES][WALL_INDEXES][FACTORS];
 
-	static int[] fastVisits = new int[FACTORS];
+	static int[] fastHits = new int[FACTORS];
 
 	Pugilist robot;
 	double bulletVelocity;
@@ -256,7 +258,7 @@ class Wave extends Condition {
 		advance(1);
 		if (passed(-18)) {
 			if (robot.getOthers() > 0) {
-				registerVisits(1);
+				registerVisits();
 			}
 			robot.removeCustomEvent(this);
 		}
@@ -279,10 +281,10 @@ class Wave extends Condition {
 						+ (FACTORS - 1) / 2), 0, FACTORS - 1);
 	}
 
-	void registerVisits(int count) {
+	void registerVisits() {
 		int index = visitingIndex(targetLocation);
-		visits[index] += count;
-		fastVisits[index] += count;
+		visits[index]++;
+		fastHits[index]++;
 	}
 
 	double gunBearing(Point2D target) {
@@ -309,21 +311,18 @@ class EnemyWave extends Wave {
 	static int[][][][] factors = new int[DISTANCE_INDEXES][VELOCITY_INDEXES][VELOCITY_INDEXES][FACTORS];
 	static double dangerForward;
 	static double dangerReverse;
+	static double dangerStop;
 	static EnemyWave passingWave;
-	boolean surfable;
 
 	public boolean test() {
 		advance(1);
 		if (passed(-18)) {
-			surfable = false;
 			passingWave = this;
 		}
-		if (passed(18)) {
+		if (passed(15)) {
 			robot.removeCustomEvent(this);
 		}
-		if (surfable) {
-			robot.updateDirectionStats(this);
-		}
+		robot.updateDirectionStats(this);
 		return false;
 	}
 
@@ -331,7 +330,7 @@ class EnemyWave extends Wave {
 		double smoothed = 0;
 		int i = 0;
 		do {
-			smoothed += ((double) (fastVisits[i]) + (double) visits[i] * 125.0)
+			smoothed += ((double) (fastHits[i]) + (double) visits[i] * 100000.0)
 					/ Math.sqrt((Math.abs(visitingIndex(destination) - i) + 1.0));
 			i++;
 		} while (i < FACTORS);
