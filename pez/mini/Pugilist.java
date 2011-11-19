@@ -80,7 +80,7 @@ public class Pugilist extends AdvancedRobot {
         EnemyWave ew = new EnemyWave();
         ew.robot = this;
         ew.gunLocation = (Point2D) enemyLocation.clone();
-        ew.targetLocation = robotLocation;
+        ew.targetLocation = (Point2D) robotLocation.clone();
         ew.startBearing = ew.gunBearing(robotLocation);
 
         double enemyDeltaEnergy = enemyEnergy - e.getEnergy();
@@ -101,7 +101,7 @@ public class Pugilist extends AdvancedRobot {
                 [exIndex = index(X_SLICES, enemyLocation.getX())]
                 [eyIndex = index(X_SLICES, enemyLocation.getY())]
                 [index(VELOCITY_SLICES, rLateralVelocity)];
-System.out.println(rxIndex + " " + ryIndex + " " + exIndex + " " + eyIndex + " " + index(VELOCITY_SLICES, rLateralVelocity));
+
         double eLateralVelocity = enemyVelocity * Math.sin(e.getHeadingRadians() - enemyAbsoluteBearing);
         wave.visits = moveStatBuffer[rxIndex]
                 [ryIndex]
@@ -262,11 +262,10 @@ class Wave extends Condition {
     static final int VELOCITY_INDEXES = 5;
     static final int WALL_INDEXES = 4;
     static final int VCHANGE_TIME_INDEXES = 6;
-    static final int FACTORS = 31;
-    static final int MIDDLE_FACTOR = (FACTORS - 1) / 2;
+    static final int MIDDLE_FACTOR = (Pugilist.FACTORS - 1) / 2;
 
 
-    static int[] fastHits = new int[FACTORS];
+    static int[] fastHits = new int[Pugilist.FACTORS];
 
     Pugilist robot;
     double bulletVelocity;
@@ -301,7 +300,7 @@ class Wave extends Condition {
         return (int) Pugilist.minMax(
                 Math.round(((Utils.normalRelativeAngle(gunBearing(target)
                         - startBearing)) / bearingDirection)
-                        + (FACTORS - 1) / 2), 0, FACTORS - 1);
+                        + MIDDLE_FACTOR), 0, Pugilist.FACTORS - 1);
     }
 
     void registerVisits() {
@@ -320,7 +319,7 @@ class Wave extends Condition {
     }
 
     int mostVisited() {
-        int mostVisited = MIDDLE_FACTOR, i = FACTORS - 1;
+        int mostVisited = MIDDLE_FACTOR, i = Pugilist.FACTORS - 1;
         do {
             if (visits[--i] > visits[mostVisited]) {
                 mostVisited = i;
@@ -355,7 +354,7 @@ class EnemyWave extends Wave {
             smoothed += ((double) (fastHits[i]) + (double) visits[i] * 100000.0)
                     / Math.sqrt((Math.abs(visitingIndex(destination) - i) + 1.0));
             i++;
-        } while (i < FACTORS);
+        } while (i < Pugilist.FACTORS);
         return smoothed / Math.abs(distanceFromTarget(targetLocation, 0))
                 / bulletVelocity;
     }
